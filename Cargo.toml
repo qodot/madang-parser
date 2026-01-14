@@ -1,0 +1,10 @@
+[package]
+name = "madang-parser"
+version = "2025.1.14"
+edition = "2024"
+description = "CommonMark/GFM/OFM parser for Madang"
+
+[dependencies]
+
+[dev-dependencies]
+pretty_assertions = "1.4"
