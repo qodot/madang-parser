@@ -5,11 +5,13 @@ pub fn parse(input: &str) -> Node {
         return Node::Document { children: vec![] };
     }
 
-    Node::Document {
-        children: vec![Node::Paragraph {
-            children: vec![Node::Text(input.to_string())],
-        }],
-    }
+    let paragraphs = input.split("\n\n").map(|paragraph| {
+        Node::Paragraph {
+            children: vec![Node::Text(paragraph.to_string())],
+        }
+    }).collect();
+
+    Node::Document { children: paragraphs }
 }
 
 #[cfg(test)]
@@ -40,6 +42,38 @@ mod tests {
                         assert_eq!(children.len(), 1);
                         match &children[0] {
                             Node::Text(s) => assert_eq!(s, "hello"),
+                            _ => panic!("Expected Text"),
+                        }
+                    }
+                    _ => panic!("Expected Paragraph"),
+                }
+            }
+            _ => panic!("Expected Document"),
+        }
+    }
+
+    #[test]
+    fn parse_two_paragraphs() {
+        let doc = parse("first\n\nsecond");
+
+        match doc {
+            Node::Document { children } => {
+                assert_eq!(children.len(), 2);
+                // 첫 번째 문단
+                match &children[0] {
+                    Node::Paragraph { children } => {
+                        match &children[0] {
+                            Node::Text(s) => assert_eq!(s, "first"),
+                            _ => panic!("Expected Text"),
+                        }
+                    }
+                    _ => panic!("Expected Paragraph"),
+                }
+                // 두 번째 문단
+                match &children[1] {
+                    Node::Paragraph { children } => {
+                        match &children[0] {
+                            Node::Text(s) => assert_eq!(s, "second"),
                             _ => panic!("Expected Text"),
                         }
                     }
