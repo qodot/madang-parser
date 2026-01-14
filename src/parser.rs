@@ -227,4 +227,49 @@ mod tests {
             _ => panic!("Expected Document"),
         }
     }
+
+    #[test]
+    fn parse_h6_heading() {
+        // h6: 최대 레벨
+        let doc = parse("###### h6 title");
+
+        match doc {
+            Node::Document { children } => {
+                assert_eq!(children.len(), 1);
+                match &children[0] {
+                    Node::Heading { level, children } => {
+                        assert_eq!(*level, 6);
+                        match &children[0] {
+                            Node::Text(s) => assert_eq!(s, "h6 title"),
+                            _ => panic!("Expected Text"),
+                        }
+                    }
+                    _ => panic!("Expected Heading"),
+                }
+            }
+            _ => panic!("Expected Document"),
+        }
+    }
+
+    #[test]
+    fn parse_seven_hashes_is_paragraph() {
+        // 7개 이상의 #는 Heading이 아닌 Paragraph
+        let doc = parse("####### not heading");
+
+        match doc {
+            Node::Document { children } => {
+                assert_eq!(children.len(), 1);
+                match &children[0] {
+                    Node::Paragraph { children } => {
+                        match &children[0] {
+                            Node::Text(s) => assert_eq!(s, "####### not heading"),
+                            _ => panic!("Expected Text"),
+                        }
+                    }
+                    _ => panic!("Expected Paragraph, not Heading"),
+                }
+            }
+            _ => panic!("Expected Document"),
+        }
+    }
 }
