@@ -5,6 +5,35 @@ pub enum Node {
     Text(String),
 }
 
+impl Node {
+    /// Container 노드의 children을 반환
+    /// Text 같은 Leaf 노드에서 호출하면 panic
+    pub fn children(&self) -> &Vec<Node> {
+        match self {
+            Node::Document { children } => children,
+            Node::Heading { children, .. } => children,
+            Node::Paragraph { children } => children,
+            Node::Text(_) => panic!("Text node has no children"),
+        }
+    }
+
+    /// Text 노드의 문자열을 반환
+    pub fn as_text(&self) -> &str {
+        match self {
+            Node::Text(s) => s,
+            _ => panic!("Expected Text node"),
+        }
+    }
+
+    /// Heading 노드의 레벨을 반환
+    pub fn level(&self) -> u8 {
+        match self {
+            Node::Heading { level, .. } => *level,
+            _ => panic!("Expected Heading node"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -12,25 +41,13 @@ mod tests {
     #[test]
     fn create_empty_document() {
         let doc = Node::Document { children: vec![] };
-
-        match doc {
-            Node::Document { children } => {
-                assert_eq!(children.len(), 0);
-            }
-            _ => panic!("Expected Document"),
-        }
+        assert_eq!(doc.children().len(), 0);
     }
 
     #[test]
     fn create_text_node() {
         let text = Node::Text(String::from("Hello"));
-
-        match text {
-            Node::Text(s) => {
-                assert_eq!(s, "Hello");
-            }
-            _ => panic!("Expected Text"),
-        }
+        assert_eq!(text.as_text(), "Hello");
     }
 
     #[test]
@@ -39,16 +56,8 @@ mod tests {
             children: vec![Node::Text(String::from("안녕하세요"))],
         };
 
-        match doc {
-            Node::Document { children } => {
-                assert_eq!(children.len(), 1);
-                match &children[0] {
-                    Node::Text(s) => assert_eq!(s, "안녕하세요"),
-                    _ => panic!("Expected Text"),
-                }
-            }
-            _ => panic!("Expected Document"),
-        }
+        assert_eq!(doc.children().len(), 1);
+        assert_eq!(doc.children()[0].as_text(), "안녕하세요");
     }
 
     #[test]
@@ -59,22 +68,8 @@ mod tests {
             }],
         };
 
-        match doc {
-            Node::Document { children } => {
-                assert_eq!(children.len(), 1);
-                match &children[0] {
-                    Node::Paragraph { children } => {
-                        assert_eq!(children.len(), 1);
-                        match &children[0] {
-                            Node::Text(s) => assert_eq!(s, "문단 내용"),
-                            _ => panic!("Expected Text"),
-                        }
-                    }
-                    _ => panic!("Expected Paragraph"),
-                }
-            }
-            _ => panic!("Expected Document"),
-        }
+        assert_eq!(doc.children().len(), 1);
+        assert_eq!(doc.children()[0].children()[0].as_text(), "문단 내용");
     }
 
     #[test]
@@ -84,16 +79,7 @@ mod tests {
             children: vec![Node::Text(String::from("제목"))],
         };
 
-        match heading {
-            Node::Heading { level, children } => {
-                assert_eq!(level, 2);
-                assert_eq!(children.len(), 1);
-                match &children[0] {
-                    Node::Text(s) => assert_eq!(s, "제목"),
-                    _ => panic!("Expected Text"),
-                }
-            }
-            _ => panic!("Expected Heading"),
-        }
+        assert_eq!(heading.level(), 2);
+        assert_eq!(heading.children()[0].as_text(), "제목");
     }
 }
