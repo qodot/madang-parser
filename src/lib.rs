@@ -4,6 +4,10 @@ pub enum Node {
     Text(String),
 }
 
+pub fn parse(_input: &str) -> Node {
+    Node::Document { children: vec![] }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,6 +75,18 @@ mod tests {
                     }
                     _ => panic!("Expected Paragraph"),
                 }
+            }
+            _ => panic!("Expected Document"),
+        }
+    }
+
+    #[test]
+    fn parse_empty_string() {
+        let doc = parse("");
+
+        match doc {
+            Node::Document { children } => {
+                assert_eq!(children.len(), 0);
             }
             _ => panic!("Expected Document"),
         }
