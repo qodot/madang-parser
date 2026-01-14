@@ -1,5 +1,6 @@
 pub enum Node {
     Document { children: Vec<Node> },
+    Paragraph { children: Vec<Node> },
     Text(String),
 }
 
@@ -43,6 +44,32 @@ mod tests {
                 match &children[0] {
                     Node::Text(s) => assert_eq!(s, "안녕하세요"),
                     _ => panic!("Expected Text"),
+                }
+            }
+            _ => panic!("Expected Document"),
+        }
+    }
+
+    #[test]
+    fn document_with_paragraph() {
+        let doc = Node::Document {
+            children: vec![Node::Paragraph {
+                children: vec![Node::Text(String::from("문단 내용"))],
+            }],
+        };
+
+        match doc {
+            Node::Document { children } => {
+                assert_eq!(children.len(), 1);
+                match &children[0] {
+                    Node::Paragraph { children } => {
+                        assert_eq!(children.len(), 1);
+                        match &children[0] {
+                            Node::Text(s) => assert_eq!(s, "문단 내용"),
+                            _ => panic!("Expected Text"),
+                        }
+                    }
+                    _ => panic!("Expected Paragraph"),
                 }
             }
             _ => panic!("Expected Document"),
