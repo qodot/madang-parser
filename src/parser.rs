@@ -15,12 +15,16 @@ pub fn parse(input: &str) -> Node {
 
             // 레벨 1~6만 유효, 7개 이상은 Paragraph
             if level >= 1 && level <= 6 {
-                // # 뒤의 내용 추출 (앞뒤 공백 제거)
-                let content = block[level..].trim();
-                return Node::Heading {
-                    level: level as u8,
-                    children: vec![Node::Text(content.to_string())],
-                };
+                let rest = &block[level..];
+
+                // # 뒤에 공백/탭이 있거나 빈 제목이어야 Heading
+                if rest.is_empty() || rest.starts_with(' ') || rest.starts_with('\t') {
+                    let content = rest.trim();
+                    return Node::Heading {
+                        level: level as u8,
+                        children: vec![Node::Text(content.to_string())],
+                    };
+                }
             }
         }
 
@@ -196,6 +200,28 @@ mod tests {
                         }
                     }
                     _ => panic!("Expected Heading"),
+                }
+            }
+            _ => panic!("Expected Document"),
+        }
+    }
+
+    #[test]
+    fn parse_heading_requires_space() {
+        // # 뒤에 공백이 없으면 Paragraph
+        let doc = parse("#no_space");
+
+        match doc {
+            Node::Document { children } => {
+                assert_eq!(children.len(), 1);
+                match &children[0] {
+                    Node::Paragraph { children } => {
+                        match &children[0] {
+                            Node::Text(s) => assert_eq!(s, "#no_space"),
+                            _ => panic!("Expected Text"),
+                        }
+                    }
+                    _ => panic!("Expected Paragraph, not Heading"),
                 }
             }
             _ => panic!("Expected Document"),
