@@ -1,5 +1,6 @@
 pub enum Node {
     Document { children: Vec<Node> },
+    Heading { level: u8, children: Vec<Node> },
     Paragraph { children: Vec<Node> },
     Text(String),
 }
@@ -73,6 +74,26 @@ mod tests {
                 }
             }
             _ => panic!("Expected Document"),
+        }
+    }
+
+    #[test]
+    fn create_heading_node() {
+        let heading = Node::Heading {
+            level: 2,
+            children: vec![Node::Text(String::from("제목"))],
+        };
+
+        match heading {
+            Node::Heading { level, children } => {
+                assert_eq!(level, 2);
+                assert_eq!(children.len(), 1);
+                match &children[0] {
+                    Node::Text(s) => assert_eq!(s, "제목"),
+                    _ => panic!("Expected Text"),
+                }
+            }
+            _ => panic!("Expected Heading"),
         }
     }
 }
