@@ -1,3 +1,15 @@
+/// 리스트 타입
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListType {
+    /// Bullet 리스트 (-, +, *)
+    Bullet,
+    /// Ordered 리스트 (숫자 + 구분자)
+    Ordered {
+        /// 구분자 ('.' 또는 ')')
+        delimiter: char,
+    },
+}
+
 #[derive(Debug)]
 pub enum Node {
     Document { children: Vec<Node> },
@@ -6,6 +18,19 @@ pub enum Node {
     Blockquote { children: Vec<Node> },
     CodeBlock { info: Option<String>, content: String },
     ThematicBreak,
+    /// 리스트
+    List {
+        /// 리스트 타입
+        list_type: ListType,
+        /// 시작 번호 (Ordered만 의미, Bullet은 1)
+        start: usize,
+        /// tight list 여부
+        tight: bool,
+        /// 리스트 아이템들
+        children: Vec<Node>,
+    },
+    /// 리스트 아이템
+    ListItem { children: Vec<Node> },
     Text(String),
 }
 
@@ -18,6 +43,8 @@ impl Node {
             Node::Heading { children, .. } => children,
             Node::Paragraph { children } => children,
             Node::Blockquote { children } => children,
+            Node::List { children, .. } => children,
+            Node::ListItem { children } => children,
             Node::CodeBlock { .. } => panic!("CodeBlock has no children"),
             Node::ThematicBreak => panic!("ThematicBreak has no children"),
             Node::Text(_) => panic!("Text node has no children"),
@@ -68,6 +95,40 @@ impl Node {
         match self {
             Node::CodeBlock { content, .. } => content,
             _ => panic!("Expected CodeBlock node"),
+        }
+    }
+
+    /// List 노드인지 확인
+    pub fn is_list(&self) -> bool {
+        matches!(self, Node::List { .. })
+    }
+
+    /// ListItem 노드인지 확인
+    pub fn is_list_item(&self) -> bool {
+        matches!(self, Node::ListItem { .. })
+    }
+
+    /// List의 타입 반환
+    pub fn list_type(&self) -> &ListType {
+        match self {
+            Node::List { list_type, .. } => list_type,
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    /// List의 시작 번호 반환
+    pub fn list_start(&self) -> usize {
+        match self {
+            Node::List { start, .. } => *start,
+            _ => panic!("Expected List node"),
+        }
+    }
+
+    /// List가 tight인지 반환
+    pub fn is_tight(&self) -> bool {
+        match self {
+            Node::List { tight, .. } => *tight,
+            _ => panic!("Expected List node"),
         }
     }
 }
