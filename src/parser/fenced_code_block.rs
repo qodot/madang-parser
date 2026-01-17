@@ -4,6 +4,11 @@
 
 use crate::node::Node;
 
+/// 문자열 앞에서 특정 문자가 연속으로 몇 개 있는지 세기
+fn count_leading_char(s: &str, c: char) -> usize {
+    s.chars().take_while(|&ch| ch == c).count()
+}
+
 /// Fenced Code Block 파싱 시도
 /// 성공하면 Some(CodeBlock), 실패하면 None 반환
 pub fn parse(text: &str, _indent: usize) -> Option<Node> {
@@ -14,15 +19,19 @@ pub fn parse(text: &str, _indent: usize) -> Option<Node> {
         return None;
     }
 
-    // 여는 펜스 확인: ```로 시작
+    // 여는 펜스 확인: ``` 또는 ~~~로 시작
     let first_line = lines[0];
-    if !first_line.starts_with("```") {
+    let (fence_char, fence_len) = if first_line.starts_with("```") {
+        ('`', count_leading_char(first_line, '`'))
+    } else if first_line.starts_with("~~~") {
+        ('~', count_leading_char(first_line, '~'))
+    } else {
         return None;
-    }
+    };
 
-    // info string 추출: ``` 이후 문자열
+    // info string 추출: 펜스 마커 이후 문자열
     let info = {
-        let after_fence = &first_line[3..];
+        let after_fence = &first_line[fence_len..];
         let trimmed = after_fence.trim();
         if trimmed.is_empty() {
             None
@@ -31,9 +40,10 @@ pub fn parse(text: &str, _indent: usize) -> Option<Node> {
         }
     };
 
-    // 닫는 펜스 확인: ```로 시작
+    // 닫는 펜스 확인: 같은 문자로 시작, 같거나 더 긴 길이
     let last_line = lines[lines.len() - 1];
-    if !last_line.starts_with("```") {
+    let closing_len = count_leading_char(last_line, fence_char);
+    if closing_len < fence_len {
         return None;
     }
 
@@ -63,6 +73,18 @@ mod tests {
     #[case("```rust\ncode\n```", Some(("code", Some("rust"))))]
     #[case("``` rust \ncode\n```", Some(("code", Some("rust"))))]  // 앞뒤 공백 제거
     #[case("```rust python\ncode\n```", Some(("code", Some("rust python"))))]  // 공백 포함
+    // 틸드 펜스 테스트
+    #[case("~~~\ncode\n~~~", Some(("code", None)))]
+    #[case("~~~rust\ncode\n~~~", Some(("code", Some("rust"))))]
+    #[case("~~\ncode\n~~", None)]  // 틸드 2개는 펜스 아님
+    #[case("~~~\ncode\n```", None)]  // 여닫는 펜스 문자 불일치
+    #[case("```\ncode\n~~~", None)]  // 여닫는 펜스 문자 불일치
+    // 펜스 길이 매칭 테스트
+    #[case("`````\ncode\n`````", Some(("code", None)))]  // 5개 == 5개
+    #[case("```\ncode\n`````", Some(("code", None)))]    // 3개 < 5개 (닫는게 더 김)
+    #[case("`````\ncode\n```", None)]                    // 5개 > 3개 (닫는게 더 짧음)
+    #[case("~~~~~\ncode\n~~~~~", Some(("code", None)))]  // 틸드도 동일
+    #[case("~~~~~\ncode\n~~~", None)]                    // 틸드 펜스 길이 불일치
     fn fenced_code_block(#[case] input: &str, #[case] expected: Option<(&str, Option<&str>)>) {
         let result = parse(input, 0);
 
