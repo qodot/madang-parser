@@ -8,3 +8,4 @@ description = "CommonMark/GFM/OFM parser for Madang"
 
 [dev-dependencies]
 pretty_assertions = "1.4"
+rstest = "0.18"
