@@ -156,6 +156,7 @@ fn try_ordered_marker(s: &str, indent: usize) -> Option<ListItemStart> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::context::{ListContinueReason, ListEndReason};
     use rstest::rstest;
 
     // === try_start (Bullet) 테스트 ===
@@ -262,5 +263,76 @@ mod tests {
                 }
             }
         }
+    }
+
+    // === try_end 테스트 ===
+
+    /// 빈 줄 처리 테스트
+    /// pending_blank=false: 첫 빈 줄 → Err(Blank)
+    /// pending_blank=true: 두 번째 빈 줄 → Ok(Consumed)
+    #[rstest]
+    #[case("", false, false)]   // 빈 줄, pending=false → 계속 (Blank)
+    #[case("  ", false, false)] // 공백만, pending=false → 계속 (Blank)
+    #[case("", true, true)]     // 빈 줄, pending=true → 종료 (Consumed)
+    #[case("  ", true, true)]   // 공백만, pending=true → 종료 (Consumed)
+    fn test_try_end_blank_line(
+        #[case] line: &str,
+        #[case] pending_blank: bool,
+        #[case] should_end: bool,
+    ) {
+        let marker = ListMarker::Bullet('-');
+        let result = try_end(line, &marker, pending_blank);
+
+        if should_end {
+            assert!(matches!(result, Ok(ListEndReason::Consumed)), "종료(Consumed)여야 함");
+        } else {
+            assert!(matches!(result, Err(ListContinueReason::Blank)), "계속(Blank)이어야 함");
+        }
+    }
+
+    /// 같은 마커 타입 → 새 아이템으로 계속
+    #[rstest]
+    #[case("- b", ListMarker::Bullet('-'))]           // 같은 bullet
+    #[case("- c", ListMarker::Bullet('-'))]
+    #[case("+ b", ListMarker::Bullet('+'))]
+    #[case("* b", ListMarker::Bullet('*'))]
+    #[case("2. b", ListMarker::Ordered { start: 1, delimiter: '.' })]  // 같은 ordered (번호 달라도 OK)
+    #[case("3. c", ListMarker::Ordered { start: 1, delimiter: '.' })]
+    #[case("2) b", ListMarker::Ordered { start: 1, delimiter: ')' })]
+    fn test_try_end_same_marker_continues(
+        #[case] line: &str,
+        #[case] marker: ListMarker,
+    ) {
+        let result = try_end(line, &marker, false);
+        assert!(matches!(result, Err(ListContinueReason::NewItem(_))), "새 아이템으로 계속해야 함: {:?}", result);
+    }
+
+    /// 다른 마커 타입 → 종료 (Reprocess)
+    #[rstest]
+    #[case("+ b", ListMarker::Bullet('-'))]           // 다른 bullet
+    #[case("* b", ListMarker::Bullet('-'))]
+    #[case("- b", ListMarker::Bullet('+'))]
+    #[case("1) b", ListMarker::Ordered { start: 1, delimiter: '.' })]  // 다른 delimiter
+    #[case("1. b", ListMarker::Ordered { start: 1, delimiter: ')' })]
+    #[case("1. b", ListMarker::Bullet('-'))]          // ordered vs bullet
+    #[case("- b", ListMarker::Ordered { start: 1, delimiter: '.' })]   // bullet vs ordered
+    fn test_try_end_different_marker_ends(
+        #[case] line: &str,
+        #[case] marker: ListMarker,
+    ) {
+        let result = try_end(line, &marker, false);
+        assert!(matches!(result, Ok(ListEndReason::Reprocess)), "종료(Reprocess)여야 함: {:?}", result);
+    }
+
+    /// 리스트가 아닌 내용 → 종료 (Reprocess)
+    #[rstest]
+    #[case("some text")]
+    #[case("# heading")]
+    #[case("> blockquote")]
+    #[case("```code")]
+    fn test_try_end_non_list_content_ends(#[case] line: &str) {
+        let marker = ListMarker::Bullet('-');
+        let result = try_end(line, &marker, false);
+        assert!(matches!(result, Ok(ListEndReason::Reprocess)), "종료(Reprocess)여야 함: {:?}", result);
     }
 }
