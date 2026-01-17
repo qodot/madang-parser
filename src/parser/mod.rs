@@ -98,8 +98,7 @@ fn process_line_in_none(line: &str, children: Vec<Node>) -> ParserState {
 
     // List 시작 감지
     if let Some(start) = list_item::try_start(line) {
-        // 마커 이후 내용 추출
-        let content = extract_list_item_content(line, &start);
+        let content = start.content.clone();
         let context = ParsingContext::List {
             first_item_start: start,
             items: Vec::new(),
@@ -114,17 +113,6 @@ fn process_line_in_none(line: &str, children: Vec<Node>) -> ParserState {
         lines: vec![line.trim().to_string()],
     };
     (children, context)
-}
-
-/// List Item의 마커 이후 내용 추출
-fn extract_list_item_content(line: &str, start: &ListItemStart) -> String {
-    let _after_indent = &line[start.indent..];
-    // content_indent는 전체 줄에서의 위치, 마커 이후부터 추출
-    if start.content_indent > line.len() {
-        String::new()
-    } else {
-        line[start.content_indent..].to_string()
-    }
 }
 
 /// Code Block 상태에서 줄 처리
@@ -228,11 +216,10 @@ fn process_line_in_list(
         if is_same_list_type(&first_item_start.marker, &new_start.marker) {
             // 현재 아이템 저장하고 새 아이템 시작
             let items = push_item(items, current_item_lines);
-            let content = extract_list_item_content(line, &new_start);
             let context = ParsingContext::List {
                 first_item_start,
                 items,
-                current_item_lines: vec![content],
+                current_item_lines: vec![new_start.content],
                 tight,
             };
             return (children, context);

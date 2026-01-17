@@ -17,13 +17,10 @@ pub(crate) fn try_start(line: &str) -> Option<ListItemStart> {
 
     let after_indent = &line[indent..];
 
-    // Bullet 마커 시도
-    if let Some(start) = try_bullet_marker(after_indent, indent) {
-        return Some(start);
-    }
-
-    // Ordered 마커 시도
-    try_ordered_marker(after_indent, indent)
+    // Bullet 또는 Ordered 마커 시도 → content 추출
+    try_bullet_marker(after_indent, indent)
+        .or_else(|| try_ordered_marker(after_indent, indent))
+        .map(|start| start.with_content_from(line))
 }
 
 /// Bullet 마커 감지 (-*+)
@@ -43,6 +40,7 @@ fn try_bullet_marker(s: &str, indent: usize) -> Option<ListItemStart> {
             marker: ListMarker::Bullet(first_char),
             indent,
             content_indent: indent + 1,
+            content: String::new(), // try_start에서 채워짐
         });
     }
 
@@ -60,6 +58,7 @@ fn try_bullet_marker(s: &str, indent: usize) -> Option<ListItemStart> {
         marker: ListMarker::Bullet(first_char),
         indent,
         content_indent,
+        content: String::new(), // try_start에서 채워짐
     })
 }
 
@@ -100,6 +99,7 @@ fn try_ordered_marker(s: &str, indent: usize) -> Option<ListItemStart> {
             },
             indent,
             content_indent: indent + marker_len,
+            content: String::new(), // try_start에서 채워짐
         });
     }
 
@@ -121,6 +121,7 @@ fn try_ordered_marker(s: &str, indent: usize) -> Option<ListItemStart> {
         },
         indent,
         content_indent,
+        content: String::new(), // try_start에서 채워짐
     })
 }
 

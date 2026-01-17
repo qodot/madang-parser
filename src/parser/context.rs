@@ -48,6 +48,20 @@ pub struct ListItemStart {
     pub indent: usize,
     /// 내용 시작 위치 (마커 + 공백 이후)
     pub content_indent: usize,
+    /// 첫 줄 내용 (마커 이후)
+    pub content: String,
+}
+
+impl ListItemStart {
+    /// 라인에서 content를 추출하여 새 인스턴스 반환
+    pub fn with_content_from(self, line: &str) -> Self {
+        let content = if self.content_indent >= line.len() {
+            String::new()
+        } else {
+            line[self.content_indent..].to_string()
+        };
+        Self { content, ..self }
+    }
 }
 
 // =============================================================================
