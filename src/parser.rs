@@ -1,5 +1,33 @@
 use crate::node::Node;
 
+/// Thematic Break 검사
+/// 규칙: *, -, _ 중 하나가 3개 이상, 공백/탭만 사이에 허용
+fn is_thematic_break(s: &str) -> bool {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    // 첫 문자가 마커 문자인지 확인
+    let first = trimmed.chars().next().unwrap();
+    if first != '*' && first != '-' && first != '_' {
+        return false;
+    }
+
+    // 모든 문자가 같은 마커이거나 공백/탭인지 확인
+    let mut marker_count = 0;
+    for c in trimmed.chars() {
+        if c == first {
+            marker_count += 1;
+        } else if c != ' ' && c != '\t' {
+            return false;
+        }
+    }
+
+    // 마커가 3개 이상이어야 함
+    marker_count >= 3
+}
+
 /// 닫는 # 시퀀스 제거
 /// 규칙: 끝에 #들이 있고, 그 앞에 공백이 있으면 제거
 fn strip_closing_hashes(s: &str) -> &str {
@@ -39,6 +67,11 @@ pub fn parse(input: &str) -> Node {
             .map(|c| if c == '\t' { 4 } else { 1 })
             .sum::<usize>();
         let block = block.trim();
+
+        // Thematic Break 검사: 들여쓰기 3칸 이하
+        if indent <= 3 && is_thematic_break(block) {
+            return Node::ThematicBreak;
+        }
 
         // Heading 검사: #로 시작하고, 들여쓰기가 3칸 이하
         if block.starts_with('#') && indent <= 3 {
@@ -148,5 +181,41 @@ mod tests {
             assert_eq!(doc.children()[0].level(), lvl, "input: {}", input);
         }
         assert_eq!(doc.children()[0].children()[0].as_text(), text, "input: {}", input);
+    }
+
+    // ============================================================
+    // Thematic Break 테스트
+    // is_break = true면 ThematicBreak, false면 Paragraph
+    // ============================================================
+    #[rstest]
+    // 기본 케이스 (3개)
+    #[case("***", true)]
+    #[case("---", true)]
+    #[case("___", true)]
+    // 3개 이상
+    #[case("*****", true)]
+    #[case("----------", true)]
+    // 문자 사이 공백
+    #[case("* * *", true)]
+    #[case("- - -", true)]
+    #[case("_  _  _", true)]                         // 여러 공백
+    // 선행 공백 (0~3칸)
+    #[case(" ***", true)]
+    #[case("  ---", true)]
+    #[case("   ___", true)]
+    // 끝 공백
+    #[case("***   ", true)]
+    // Thematic Break가 아닌 케이스
+    #[case("**", false)]                             // 2개 부족
+    #[case("--", false)]
+    #[case("__", false)]
+    #[case("    ***", false)]                        // 4칸 들여쓰기
+    #[case("*-*", false)]                            // 혼합 문자
+    #[case("***a", false)]                           // 다른 문자 포함
+    #[case("a]***", false)]                          // 앞에 다른 문자
+    fn test_thematic_break(#[case] input: &str, #[case] is_break: bool) {
+        let doc = parse(input);
+        assert_eq!(doc.children().len(), 1, "input: {}", input);
+        assert_eq!(doc.children()[0].is_thematic_break(), is_break, "input: {}", input);
     }
 }

@@ -2,6 +2,7 @@ pub enum Node {
     Document { children: Vec<Node> },
     Heading { level: u8, children: Vec<Node> },
     Paragraph { children: Vec<Node> },
+    ThematicBreak,
     Text(String),
 }
 
@@ -13,6 +14,7 @@ impl Node {
             Node::Document { children } => children,
             Node::Heading { children, .. } => children,
             Node::Paragraph { children } => children,
+            Node::ThematicBreak => panic!("ThematicBreak has no children"),
             Node::Text(_) => panic!("Text node has no children"),
         }
     }
@@ -31,6 +33,11 @@ impl Node {
             Node::Heading { level, .. } => *level,
             _ => panic!("Expected Heading node"),
         }
+    }
+
+    /// ThematicBreak 노드인지 확인
+    pub fn is_thematic_break(&self) -> bool {
+        matches!(self, Node::ThematicBreak)
     }
 }
 
