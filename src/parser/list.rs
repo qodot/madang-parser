@@ -132,4 +132,61 @@ mod tests {
             assert_eq!(para.children()[0].as_text(), *text, "아이템 {}", i);
         }
     }
+
+    // === 다른 마커로 리스트 분리 테스트 ===
+
+    /// 다른 Bullet 마커는 별도 리스트로 분리
+    #[rstest]
+    #[case("- a\n+ b", &["a"], &["b"])]           // dash → plus
+    #[case("- a\n* b", &["a"], &["b"])]           // dash → asterisk
+    #[case("+ a\n- b", &["a"], &["b"])]           // plus → dash
+    #[case("- a\n- b\n+ c", &["a", "b"], &["c"])] // 2개 dash → 1개 plus
+    fn different_bullet_markers_create_separate_lists(
+        #[case] input: &str,
+        #[case] first_list_texts: &[&str],
+        #[case] second_list_texts: &[&str],
+    ) {
+        let doc = parse(input);
+        assert_eq!(doc.children().len(), 2, "문서에 List가 2개여야 함");
+
+        // 첫 번째 리스트
+        let list1 = &doc.children()[0];
+        assert!(list1.is_list(), "첫 번째가 List여야 함");
+        assert_eq!(list1.children().len(), first_list_texts.len(), "첫 번째 리스트 아이템 수");
+        for (i, text) in first_list_texts.iter().enumerate() {
+            let item = &list1.children()[i];
+            let para = &item.children()[0];
+            assert_eq!(para.children()[0].as_text(), *text, "첫 번째 리스트 아이템 {}", i);
+        }
+
+        // 두 번째 리스트
+        let list2 = &doc.children()[1];
+        assert!(list2.is_list(), "두 번째가 List여야 함");
+        assert_eq!(list2.children().len(), second_list_texts.len(), "두 번째 리스트 아이템 수");
+        for (i, text) in second_list_texts.iter().enumerate() {
+            let item = &list2.children()[i];
+            let para = &item.children()[0];
+            assert_eq!(para.children()[0].as_text(), *text, "두 번째 리스트 아이템 {}", i);
+        }
+    }
+
+    /// 다른 Ordered 구분자는 별도 리스트로 분리
+    #[rstest]
+    #[case("1. a\n1) b", &["a"], &["b"])]  // dot → paren
+    #[case("1) a\n1. b", &["a"], &["b"])]  // paren → dot
+    fn different_ordered_delimiters_create_separate_lists(
+        #[case] input: &str,
+        #[case] first_list_texts: &[&str],
+        #[case] second_list_texts: &[&str],
+    ) {
+        let doc = parse(input);
+        assert_eq!(doc.children().len(), 2, "문서에 List가 2개여야 함");
+
+        let list1 = &doc.children()[0];
+        let list2 = &doc.children()[1];
+
+        assert!(list1.is_list() && list2.is_list(), "둘 다 List여야 함");
+        assert_eq!(list1.children().len(), first_list_texts.len());
+        assert_eq!(list2.children().len(), second_list_texts.len());
+    }
 }
