@@ -72,4 +72,16 @@ pub enum ParsingContext {
 
     /// Blockquote 파싱 중 (여러 줄 수집)
     Blockquote { lines: Vec<String> },
+
+    /// List 파싱 중
+    List {
+        /// 첫 아이템의 시작 정보 (리스트 타입 결정용)
+        first_item_start: ListItemStart,
+        /// 완성된 아이템들의 내용
+        items: Vec<Vec<String>>,
+        /// 현재 아이템의 줄들
+        current_item_lines: Vec<String>,
+        /// tight 리스트 여부 (아이템 간 빈 줄 없음)
+        tight: bool,
+    },
 }

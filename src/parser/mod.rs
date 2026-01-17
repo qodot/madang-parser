@@ -12,8 +12,8 @@ mod list_item;
 mod paragraph;
 mod thematic_break;
 
-use crate::node::Node;
-use context::{FencedCodeBlockStart, ParsingContext};
+use crate::node::{ListType, Node};
+use context::{FencedCodeBlockStart, ListItemStart, ListMarker, ParsingContext};
 use fenced_code_block::{
     is_end as is_end_fenced_code_block, try_start as try_start_fenced_code_block,
 };
@@ -49,6 +49,12 @@ fn process_line(line: &str, context: ParsingContext, children: Vec<Node>) -> Par
         }
         ParsingContext::Paragraph { lines } => process_line_in_paragraph(line, lines, children),
         ParsingContext::Blockquote { lines } => process_line_in_blockquote(line, lines, children),
+        ParsingContext::List {
+            first_item_start,
+            items,
+            current_item_lines,
+            tight,
+        } => process_line_in_list(line, first_item_start, items, current_item_lines, tight, children),
     }
 }
 
@@ -90,11 +96,35 @@ fn process_line_in_none(line: &str, children: Vec<Node>) -> ParserState {
         return (children, context);
     }
 
+    // List 시작 감지
+    if let Some(start) = list_item::try_start(line) {
+        // 마커 이후 내용 추출
+        let content = extract_list_item_content(line, &start);
+        let context = ParsingContext::List {
+            first_item_start: start,
+            items: Vec::new(),
+            current_item_lines: vec![content],
+            tight: true,
+        };
+        return (children, context);
+    }
+
     // 나머지는 Paragraph 시작
     let context = ParsingContext::Paragraph {
         lines: vec![line.trim().to_string()],
     };
     (children, context)
+}
+
+/// List Item의 마커 이후 내용 추출
+fn extract_list_item_content(line: &str, start: &ListItemStart) -> String {
+    let _after_indent = &line[start.indent..];
+    // content_indent는 전체 줄에서의 위치, 마커 이후부터 추출
+    if start.content_indent > line.len() {
+        String::new()
+    } else {
+        line[start.content_indent..].to_string()
+    }
 }
 
 /// Code Block 상태에서 줄 처리
@@ -174,6 +204,103 @@ fn process_line_in_paragraph(line: &str, lines: Vec<String>, children: Vec<Node>
     // 줄 추가
     let lines = push_string(lines, line.trim().to_string());
     (children, ParsingContext::Paragraph { lines })
+}
+
+/// List 상태에서 줄 처리
+fn process_line_in_list(
+    line: &str,
+    first_item_start: ListItemStart,
+    items: Vec<Vec<String>>,
+    current_item_lines: Vec<String>,
+    tight: bool,
+    children: Vec<Node>,
+) -> ParserState {
+    // 빈 줄이면 List 종료
+    if line.trim().is_empty() {
+        let list_node = build_list_node(&first_item_start, items, current_item_lines, tight);
+        let children = push_node(children, list_node);
+        return (children, ParsingContext::None);
+    }
+
+    // 새 List Item 시작인지 확인
+    if let Some(new_start) = list_item::try_start(line) {
+        // 같은 마커 타입인지 확인
+        if is_same_list_type(&first_item_start.marker, &new_start.marker) {
+            // 현재 아이템 저장하고 새 아이템 시작
+            let items = push_item(items, current_item_lines);
+            let content = extract_list_item_content(line, &new_start);
+            let context = ParsingContext::List {
+                first_item_start,
+                items,
+                current_item_lines: vec![content],
+                tight,
+            };
+            return (children, context);
+        }
+    }
+
+    // 다른 블록이면 List 종료 후 해당 블록 처리
+    let list_node = build_list_node(&first_item_start, items, current_item_lines, tight);
+    let children = push_node(children, list_node);
+    process_line_in_none(line, children)
+}
+
+/// 같은 리스트 타입인지 확인
+fn is_same_list_type(a: &ListMarker, b: &ListMarker) -> bool {
+    match (a, b) {
+        (ListMarker::Bullet(c1), ListMarker::Bullet(c2)) => c1 == c2,
+        (ListMarker::Ordered { delimiter: d1, .. }, ListMarker::Ordered { delimiter: d2, .. }) => {
+            d1 == d2
+        }
+        _ => false,
+    }
+}
+
+/// List Node 생성
+fn build_list_node(
+    first_item_start: &ListItemStart,
+    items: Vec<Vec<String>>,
+    current_item_lines: Vec<String>,
+    tight: bool,
+) -> Node {
+    // 현재 아이템 포함하여 모든 아이템 수집
+    let all_items = push_item(items, current_item_lines);
+
+    // 각 아이템을 ListItem 노드로 변환
+    let list_items: Vec<Node> = all_items
+        .into_iter()
+        .map(|item_lines| {
+            let text = item_lines.join("\n");
+            let para = paragraph::parse(&text);
+            Node::ListItem {
+                children: vec![para],
+            }
+        })
+        .collect();
+
+    // 리스트 타입 결정
+    let (list_type, start) = match &first_item_start.marker {
+        ListMarker::Bullet(_) => (ListType::Bullet, 1),
+        ListMarker::Ordered { start, delimiter } => (
+            ListType::Ordered {
+                delimiter: *delimiter,
+            },
+            *start,
+        ),
+    };
+
+    Node::List {
+        list_type,
+        start,
+        tight,
+        children: list_items,
+    }
+}
+
+/// 아이템 리스트에 아이템 추가
+fn push_item(mut items: Vec<Vec<String>>, item: Vec<String>) -> Vec<Vec<String>> {
+    items.push(item);
+    items
 }
 
 /// Blockquote 상태에서 줄 처리
@@ -261,6 +388,15 @@ fn finalize_context(context: ParsingContext, children: Vec<Node>) -> Vec<Node> {
                 children
             }
         }
+        ParsingContext::List {
+            first_item_start,
+            items,
+            current_item_lines,
+            tight,
+        } => {
+            let list_node = build_list_node(&first_item_start, items, current_item_lines, tight);
+            push_node(children, list_node)
+        }
     }
 }
 
@@ -319,5 +455,48 @@ mod tests {
         let block = &doc.children()[0];
         assert!(block.is_code_block(), "CodeBlock이 아님: {:?}", block);
         assert_eq!(block.content(), expected_content);
+    }
+
+    // === List 파싱 테스트 ===
+
+    /// 단일 아이템 Bullet List
+    #[rstest]
+    #[case("- item", 1, "item")]
+    #[case("+ item", 1, "item")]
+    #[case("* item", 1, "item")]
+    fn single_bullet_list_item(#[case] input: &str, #[case] item_count: usize, #[case] text: &str) {
+        let doc = parse(input);
+        assert_eq!(doc.children().len(), 1, "문서에 List가 하나여야 함");
+
+        let list = &doc.children()[0];
+        assert!(list.is_list(), "List여야 함: {:?}", list);
+        assert_eq!(list.children().len(), item_count, "아이템 수");
+
+        let item = &list.children()[0];
+        assert!(item.is_list_item(), "ListItem이어야 함");
+
+        // ListItem 안에 Paragraph가 있고, 그 안에 Text가 있음
+        let para = &item.children()[0];
+        assert_eq!(para.children()[0].as_text(), text);
+    }
+
+    /// 여러 아이템 tight Bullet List
+    #[rstest]
+    #[case("- a\n- b", 2, &["a", "b"])]
+    #[case("- a\n- b\n- c", 3, &["a", "b", "c"])]
+    fn multi_item_bullet_list(#[case] input: &str, #[case] item_count: usize, #[case] texts: &[&str]) {
+        let doc = parse(input);
+        assert_eq!(doc.children().len(), 1, "문서에 List가 하나여야 함");
+
+        let list = &doc.children()[0];
+        assert!(list.is_list(), "List여야 함");
+        assert!(list.is_tight(), "tight List여야 함");
+        assert_eq!(list.children().len(), item_count, "아이템 수");
+
+        for (i, text) in texts.iter().enumerate() {
+            let item = &list.children()[i];
+            let para = &item.children()[0];
+            assert_eq!(para.children()[0].as_text(), *text, "아이템 {}", i);
+        }
     }
 }
