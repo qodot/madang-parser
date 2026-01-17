@@ -1,6 +1,7 @@
 //! CommonMark 파서
 //!
-//! 블록 레벨 요소를 파싱하여 AST를 생성합니다.
+//! 라인 단위로 스캔하며 블록 레벨 요소를 파싱합니다.
+//! fold 패턴을 사용하여 불변 상태 전이를 구현합니다.
 
 mod blockquote;
 mod fenced_code_block;
@@ -10,31 +11,379 @@ mod thematic_break;
 
 use crate::node::Node;
 
+/// 파싱 중인 컨텍스트 (상태 기계의 상태)
+enum ParsingContext {
+    /// 새 블록 시작 대기
+    None,
+
+    /// Fenced Code Block 파싱 중
+    FencedCodeBlock {
+        fence_char: char,
+        fence_len: usize,
+        info: Option<String>,
+        content: Vec<String>,
+        indent: usize,
+    },
+
+    /// Paragraph 파싱 중 (여러 줄이 하나의 문단)
+    Paragraph { lines: Vec<String> },
+
+    /// Blockquote 파싱 중 (여러 줄 수집)
+    Blockquote { lines: Vec<String> },
+}
+
+/// 파서 상태: (완성된 노드들, 현재 컨텍스트)
+type ParserState = (Vec<Node>, ParsingContext);
+
 /// 문서 전체 파싱
 pub fn parse(input: &str) -> Node {
     if input.is_empty() {
         return Node::Document { children: vec![] };
     }
 
-    let children = input
-        .split("\n\n")
-        .filter(|s| !s.is_empty())
-        .map(parse_block)
-        .collect();
+    // fold: 각 줄을 처리하며 상태 전이
+    let (children, final_context) = input
+        .lines()
+        .fold(
+            (Vec::new(), ParsingContext::None),
+            |(children, context), line| process_line(line, context, children),
+        );
+
+    // 마지막 컨텍스트 마무리
+    let children = finalize_context(final_context, children);
 
     Node::Document { children }
 }
 
-/// 단일 블록 파싱
-fn parse_block(block: &str) -> Node {
+/// 한 줄 처리 후 새 상태 반환
+fn process_line(line: &str, context: ParsingContext, children: Vec<Node>) -> ParserState {
+    match context {
+        ParsingContext::None => process_line_in_none(line, children),
+        ParsingContext::FencedCodeBlock {
+            fence_char,
+            fence_len,
+            info,
+            content,
+            indent,
+        } => process_line_in_code_block(line, fence_char, fence_len, info, content, indent, children),
+        ParsingContext::Paragraph { lines } => process_line_in_paragraph(line, lines, children),
+        ParsingContext::Blockquote { lines } => process_line_in_blockquote(line, lines, children),
+    }
+}
+
+/// None 상태에서 줄 처리: 새 블록 시작 감지
+fn process_line_in_none(line: &str, children: Vec<Node>) -> ParserState {
+    // 빈 줄은 무시
+    if line.trim().is_empty() {
+        return (children, ParsingContext::None);
+    }
+
+    // Fenced Code Block 시작 감지
+    if let Some((fence_char, fence_len, info, indent)) = try_start_fenced_code_block(line) {
+        let context = ParsingContext::FencedCodeBlock {
+            fence_char,
+            fence_len,
+            info,
+            content: Vec::new(),
+            indent,
+        };
+        return (children, context);
+    }
+
+    // 한 줄 블록들 시도 (Thematic Break, ATX Heading)
+    let indent = calculate_indent(line);
+    let trimmed = line.trim();
+
+    if let Some(node) = thematic_break::parse(trimmed, indent) {
+        let children = push_node(children, node);
+        return (children, ParsingContext::None);
+    }
+
+    if let Some(node) = heading::parse(trimmed, indent) {
+        let children = push_node(children, node);
+        return (children, ParsingContext::None);
+    }
+
+    // Blockquote 시작 감지 (> 로 시작하고 들여쓰기 3칸 이하)
+    if trimmed.starts_with('>') && indent <= 3 {
+        let context = ParsingContext::Blockquote {
+            lines: vec![trimmed.to_string()],
+        };
+        return (children, context);
+    }
+
+    // 나머지는 Paragraph 시작
+    let context = ParsingContext::Paragraph {
+        lines: vec![line.trim().to_string()],
+    };
+    (children, context)
+}
+
+/// Fenced Code Block 시작 줄인지 확인
+/// 반환: (fence_char, fence_len, info, indent)
+fn try_start_fenced_code_block(line: &str) -> Option<(char, usize, Option<String>, usize)> {
+    let indent = count_leading_spaces(line);
+    if indent > 3 {
+        return None;
+    }
+
+    let after_indent = &line[indent..];
+
+    let (fence_char, fence_len) = if after_indent.starts_with("```") {
+        ('`', count_leading_char(after_indent, '`'))
+    } else if after_indent.starts_with("~~~") {
+        ('~', count_leading_char(after_indent, '~'))
+    } else {
+        return None;
+    };
+
+    let info = {
+        let after_fence = &after_indent[fence_len..];
+        let trimmed = after_fence.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    };
+
+    Some((fence_char, fence_len, info, indent))
+}
+
+/// Code Block 상태에서 줄 처리
+fn process_line_in_code_block(
+    line: &str,
+    fence_char: char,
+    fence_len: usize,
+    info: Option<String>,
+    content: Vec<String>,
+    indent: usize,
+    children: Vec<Node>,
+) -> ParserState {
+    // 닫는 펜스인지 확인
+    if is_closing_fence(line, fence_char, fence_len) {
+        let content_str = content.join("\n");
+        let node = Node::CodeBlock {
+            info,
+            content: content_str,
+        };
+        let children = push_node(children, node);
+        return (children, ParsingContext::None);
+    }
+
+    // 코드 줄 추가
+    let code_line = remove_indent(line, indent);
+    let content = push_string(content, code_line.to_string());
+
+    let context = ParsingContext::FencedCodeBlock {
+        fence_char,
+        fence_len,
+        info,
+        content,
+        indent,
+    };
+    (children, context)
+}
+
+/// 닫는 펜스인지 확인
+fn is_closing_fence(line: &str, fence_char: char, min_fence_len: usize) -> bool {
+    let indent = count_leading_spaces(line);
+    if indent > 3 {
+        return false;
+    }
+
+    let after_indent = &line[indent..];
+    let closing_len = count_leading_char(after_indent, fence_char);
+
+    if closing_len < min_fence_len {
+        return false;
+    }
+
+    after_indent[closing_len..].trim().is_empty()
+}
+
+/// Paragraph 상태에서 줄 처리
+fn process_line_in_paragraph(
+    line: &str,
+    lines: Vec<String>,
+    children: Vec<Node>,
+) -> ParserState {
+    // 빈 줄이면 Paragraph 종료
+    if line.trim().is_empty() {
+        let text = lines.join("\n");
+        let children = push_node(children, paragraph::parse(&text));
+        return (children, ParsingContext::None);
+    }
+
+    // Fenced Code Block 시작이면 Paragraph 종료 후 Code Block 시작
+    if let Some((fence_char, fence_len, info, indent)) = try_start_fenced_code_block(line) {
+        let text = lines.join("\n");
+        let children = push_node(children, paragraph::parse(&text));
+        let context = ParsingContext::FencedCodeBlock {
+            fence_char,
+            fence_len,
+            info,
+            content: Vec::new(),
+            indent,
+        };
+        return (children, context);
+    }
+
+    // Thematic Break이면 Paragraph 종료
+    let trimmed = line.trim();
+    let indent = calculate_indent(line);
+    if let Some(node) = thematic_break::parse(trimmed, indent) {
+        let text = lines.join("\n");
+        let children = push_node(children, paragraph::parse(&text));
+        let children = push_node(children, node);
+        return (children, ParsingContext::None);
+    }
+
+    // ATX Heading이면 Paragraph 종료
+    if let Some(node) = heading::parse(trimmed, indent) {
+        let text = lines.join("\n");
+        let children = push_node(children, paragraph::parse(&text));
+        let children = push_node(children, node);
+        return (children, ParsingContext::None);
+    }
+
+    // Blockquote 시작이면 Paragraph 종료 후 Blockquote 시작
+    if trimmed.starts_with('>') && indent <= 3 {
+        let text = lines.join("\n");
+        let children = push_node(children, paragraph::parse(&text));
+        let context = ParsingContext::Blockquote {
+            lines: vec![trimmed.to_string()],
+        };
+        return (children, context);
+    }
+
+    // 줄 추가
+    let lines = push_string(lines, line.trim().to_string());
+    (children, ParsingContext::Paragraph { lines })
+}
+
+/// Blockquote 상태에서 줄 처리
+fn process_line_in_blockquote(
+    line: &str,
+    lines: Vec<String>,
+    children: Vec<Node>,
+) -> ParserState {
+    let trimmed = line.trim();
+    let indent = calculate_indent(line);
+
+    // 빈 줄이면 Blockquote 종료
+    if trimmed.is_empty() {
+        let text = lines.join("\n");
+        if let Some(node) = blockquote::parse(&text, 0, parse_block_simple) {
+            let children = push_node(children, node);
+            return (children, ParsingContext::None);
+        }
+        // blockquote 파싱 실패시 (이론상 발생 안함)
+        return (children, ParsingContext::None);
+    }
+
+    // Fenced Code Block 시작이면 Blockquote 종료
+    if let Some((fence_char, fence_len, info, fence_indent)) = try_start_fenced_code_block(line) {
+        let text = lines.join("\n");
+        let children = if let Some(node) = blockquote::parse(&text, 0, parse_block_simple) {
+            push_node(children, node)
+        } else {
+            children
+        };
+        let context = ParsingContext::FencedCodeBlock {
+            fence_char,
+            fence_len,
+            info,
+            content: Vec::new(),
+            indent: fence_indent,
+        };
+        return (children, context);
+    }
+
+    // Thematic Break이면 Blockquote 종료
+    if let Some(node) = thematic_break::parse(trimmed, indent) {
+        let text = lines.join("\n");
+        if let Some(bq_node) = blockquote::parse(&text, 0, parse_block_simple) {
+            let children = push_node(children, bq_node);
+            let children = push_node(children, node);
+            return (children, ParsingContext::None);
+        }
+        let children = push_node(children, node);
+        return (children, ParsingContext::None);
+    }
+
+    // ATX Heading이면 Blockquote 종료
+    if let Some(node) = heading::parse(trimmed, indent) {
+        let text = lines.join("\n");
+        if let Some(bq_node) = blockquote::parse(&text, 0, parse_block_simple) {
+            let children = push_node(children, bq_node);
+            let children = push_node(children, node);
+            return (children, ParsingContext::None);
+        }
+        let children = push_node(children, node);
+        return (children, ParsingContext::None);
+    }
+
+    // > 로 시작하거나 lazy continuation이면 Blockquote 계속
+    // (> 로 시작하지 않아도 Blockquote 안에서는 줄이 계속됨)
+    let lines = push_string(lines, trimmed.to_string());
+    (children, ParsingContext::Blockquote { lines })
+}
+
+/// 마지막 컨텍스트 마무리
+fn finalize_context(context: ParsingContext, children: Vec<Node>) -> Vec<Node> {
+    match context {
+        ParsingContext::None => children,
+        ParsingContext::FencedCodeBlock { info, content, .. } => {
+            let content_str = content.join("\n");
+            let node = Node::CodeBlock {
+                info,
+                content: content_str,
+            };
+            push_node(children, node)
+        }
+        ParsingContext::Paragraph { lines } => {
+            let text = lines.join("\n");
+            push_node(children, paragraph::parse(&text))
+        }
+        ParsingContext::Blockquote { lines } => {
+            let text = lines.join("\n");
+            if let Some(node) = blockquote::parse(&text, 0, parse_block_simple) {
+                push_node(children, node)
+            } else {
+                children
+            }
+        }
+    }
+}
+
+/// 벡터에 요소 추가 후 반환 (불변 스타일)
+fn push_node(mut vec: Vec<Node>, node: Node) -> Vec<Node> {
+    vec.push(node);
+    vec
+}
+
+/// 문자열 벡터에 요소 추가 후 반환
+fn push_string(mut vec: Vec<String>, s: String) -> Vec<String> {
+    vec.push(s);
+    vec
+}
+
+/// 단일 블록 파싱 (blockquote 내부 등에서 사용)
+fn parse_block_simple(block: &str) -> Node {
     let indent = calculate_indent(block);
     let trimmed = block.trim();
 
-    // 순서대로 파싱 시도, 첫 번째 성공 반환
-    // 주의: fenced_code_block은 trimmed 대신 block을 사용 (들여쓰기 보존)
-    fenced_code_block::parse(block, indent)
-        .or_else(|| thematic_break::parse(trimmed, indent))
-        .or_else(|| blockquote::parse(trimmed, indent, parse_block))
+    if let Some(node) = fenced_code_block::parse(block, indent) {
+        return node;
+    }
+
+    // 중첩 blockquote 처리를 위해 blockquote 파싱 시도
+    if let Some(node) = blockquote::parse(trimmed, indent, parse_block_simple) {
+        return node;
+    }
+
+    thematic_break::parse(trimmed, indent)
         .or_else(|| heading::parse(trimmed, indent))
         .unwrap_or_else(|| paragraph::parse(trimmed))
 }
@@ -48,13 +397,43 @@ fn calculate_indent(block: &str) -> usize {
         .sum()
 }
 
+/// 앞 공백 개수 세기 (탭 미포함)
+fn count_leading_spaces(s: &str) -> usize {
+    s.chars().take_while(|&c| c == ' ').count()
+}
+
+/// 특정 문자가 연속으로 몇 개인지 세기
+fn count_leading_char(s: &str, c: char) -> usize {
+    s.chars().take_while(|&ch| ch == c).count()
+}
+
+/// 최대 n칸 공백 제거
+fn remove_indent(s: &str, n: usize) -> &str {
+    let spaces = count_leading_spaces(s);
+    let remove = spaces.min(n);
+    &s[remove..]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn parse_empty_string() {
         let doc = parse("");
         assert_eq!(doc.children().len(), 0);
+    }
+
+    /// 코드 블록 안 빈 줄 테스트
+    #[rstest]
+    #[case("```\nline1\n\nline2\n```", "line1\n\nline2")]
+    #[case("```rust\nfn main() {\n\n    println!(\"hi\");\n}\n```", "fn main() {\n\n    println!(\"hi\");\n}")]
+    fn code_block_with_blank_line(#[case] input: &str, #[case] expected_content: &str) {
+        let doc = parse(input);
+        assert_eq!(doc.children().len(), 1, "코드 블록이 분리됨: {:?}", doc);
+        let block = &doc.children()[0];
+        assert!(block.is_code_block(), "CodeBlock이 아님: {:?}", block);
+        assert_eq!(block.content(), expected_content);
     }
 }

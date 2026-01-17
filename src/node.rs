@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub enum Node {
     Document { children: Vec<Node> },
     Heading { level: u8, children: Vec<Node> },
