@@ -20,6 +20,17 @@ pub fn parse(text: &str, _indent: usize) -> Option<Node> {
         return None;
     }
 
+    // info string 추출: ``` 이후 문자열
+    let info = {
+        let after_fence = &first_line[3..];
+        let trimmed = after_fence.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    };
+
     // 닫는 펜스 확인: ```로 시작
     let last_line = lines[lines.len() - 1];
     if !last_line.starts_with("```") {
@@ -33,10 +44,7 @@ pub fn parse(text: &str, _indent: usize) -> Option<Node> {
         String::new()
     };
 
-    Some(Node::CodeBlock {
-        info: None,
-        content,
-    })
+    Some(Node::CodeBlock { info, content })
 }
 
 #[cfg(test)]
@@ -44,22 +52,27 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
+    // expected: Some((content, info)) 또는 None (파싱 실패)
     #[rstest]
-    #[case("```\ncode\n```", Some("code"))]
-    #[case("```\nline1\nline2\n```", Some("line1\nline2"))]
-    #[case("```\n\n```", Some(""))]
+    #[case("```\ncode\n```", Some(("code", None)))]
+    #[case("```\nline1\nline2\n```", Some(("line1\nline2", None)))]
+    #[case("```\n\n```", Some(("", None)))]
     #[case("``\ncode\n``", None)]  // 백틱 2개는 펜스 아님
     #[case("code", None)]          // 펜스 없음
-    fn fenced_code_block(#[case] input: &str, #[case] expected: Option<&str>) {
+    // info string 테스트
+    #[case("```rust\ncode\n```", Some(("code", Some("rust"))))]
+    #[case("``` rust \ncode\n```", Some(("code", Some("rust"))))]  // 앞뒤 공백 제거
+    #[case("```rust python\ncode\n```", Some(("code", Some("rust python"))))]  // 공백 포함
+    fn fenced_code_block(#[case] input: &str, #[case] expected: Option<(&str, Option<&str>)>) {
         let result = parse(input, 0);
 
         match expected {
-            Some(content) => {
+            Some((content, info)) => {
                 assert!(result.is_some(), "파싱 실패: {}", input);
                 let node = result.unwrap();
                 assert!(node.is_code_block(), "CodeBlock이 아님");
                 assert_eq!(node.content(), content);
-                assert_eq!(node.info(), None);
+                assert_eq!(node.info(), info);
             }
             None => {
                 assert!(result.is_none(), "펜스가 아닌데 파싱됨: {}", input);
