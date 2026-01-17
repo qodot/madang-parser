@@ -9,6 +9,13 @@ fn count_leading_char(s: &str, c: char) -> usize {
     s.chars().take_while(|&ch| ch == c).count()
 }
 
+/// 문자열에서 최대 n칸의 공백 제거
+fn remove_indent(s: &str, n: usize) -> &str {
+    let spaces = count_leading_char(s, ' ');
+    let remove = spaces.min(n);
+    &s[remove..]
+}
+
 /// Fenced Code Block 파싱 시도
 /// 성공하면 Some(CodeBlock), 실패하면 None 반환
 pub fn parse(text: &str, _indent: usize) -> Option<Node> {
@@ -18,19 +25,26 @@ pub fn parse(text: &str, _indent: usize) -> Option<Node> {
         return None;
     }
 
-    // 여는 펜스 확인: ``` 또는 ~~~로 시작
+    // 여는 펜스의 들여쓰기 계산 (0-3칸만 허용)
     let first_line = lines[0];
-    let (fence_char, fence_len) = if first_line.starts_with("```") {
-        ('`', count_leading_char(first_line, '`'))
-    } else if first_line.starts_with("~~~") {
-        ('~', count_leading_char(first_line, '~'))
+    let opening_indent = count_leading_char(first_line, ' ');
+    if opening_indent > 3 {
+        return None;
+    }
+
+    // 들여쓰기 제거 후 펜스 확인
+    let first_line_trimmed = &first_line[opening_indent..];
+    let (fence_char, fence_len) = if first_line_trimmed.starts_with("```") {
+        ('`', count_leading_char(first_line_trimmed, '`'))
+    } else if first_line_trimmed.starts_with("~~~") {
+        ('~', count_leading_char(first_line_trimmed, '~'))
     } else {
         return None;
     };
 
     // info string 추출: 펜스 마커 이후 문자열
     let info = {
-        let after_fence = &first_line[fence_len..];
+        let after_fence = &first_line_trimmed[fence_len..];
         let trimmed = after_fence.trim();
         if trimmed.is_empty() {
             None
@@ -39,31 +53,28 @@ pub fn parse(text: &str, _indent: usize) -> Option<Node> {
         }
     };
 
-    // 닫는 펜스 찾기: 같은 문자로 시작, 같거나 더 긴 길이
+    // 닫는 펜스 찾기: 들여쓰기 제거 후 같은 문자, 같거나 더 긴 길이
     let has_closing_fence = if lines.len() >= 2 {
         let last_line = lines[lines.len() - 1];
-        let closing_len = count_leading_char(last_line, fence_char);
+        let last_line_trimmed = remove_indent(last_line, 3); // 닫는 펜스도 0-3칸 허용
+        let closing_len = count_leading_char(last_line_trimmed, fence_char);
         closing_len >= fence_len
     } else {
         false
     };
 
-    // 내용 추출
-    let content = if has_closing_fence {
-        // 닫는 펜스가 있으면 마지막 줄 제외
-        if lines.len() > 2 {
-            lines[1..lines.len() - 1].join("\n")
-        } else {
-            String::new()
-        }
+    // 내용 추출 (들여쓰기 제거)
+    let content_lines: Vec<&str> = if has_closing_fence {
+        lines[1..lines.len() - 1].to_vec()
     } else {
-        // 닫는 펜스가 없으면 첫 줄 이후 전체
-        if lines.len() > 1 {
-            lines[1..].join("\n")
-        } else {
-            String::new()
-        }
+        lines[1..].to_vec()
     };
+
+    let content = content_lines
+        .iter()
+        .map(|line| remove_indent(line, opening_indent))
+        .collect::<Vec<_>>()
+        .join("\n");
 
     Some(Node::CodeBlock { info, content })
 }
@@ -102,6 +113,12 @@ mod tests {
     #[case("```rust\ncode", Some(("code", Some("rust"))))]
     #[case("```\nline1\nline2", Some(("line1\nline2", None)))]
     #[case("~~~\ncode", Some(("code", None)))]
+    // 들여쓰기 처리
+    #[case("  ```\n  code\n  ```", Some(("code", None)))]        // 2칸 들여쓰기 제거
+    #[case("   ```\n   code\n   ```", Some(("code", None)))]     // 3칸 들여쓰기 제거
+    #[case("  ```\n    code\n  ```", Some(("  code", None)))]    // 2칸만 제거, 추가 2칸 유지
+    #[case("  ```\ncode\n  ```", Some(("code", None)))]          // 내용에 들여쓰기 없어도 OK
+    #[case("    ```\ncode\n```", None)]                          // 4칸 들여쓰기는 펜스 아님
     fn fenced_code_block(#[case] input: &str, #[case] expected: Option<(&str, Option<&str>)>) {
         let result = parse(input, 0);
 
