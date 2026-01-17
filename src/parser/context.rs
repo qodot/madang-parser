@@ -53,6 +53,17 @@ impl ListMarker {
             ),
         }
     }
+
+    /// 같은 리스트 타입인지 확인 (같은 리스트에 속할 수 있는지)
+    pub fn is_same_type(&self, other: &ListMarker) -> bool {
+        match (self, other) {
+            (ListMarker::Bullet(c1), ListMarker::Bullet(c2)) => c1 == c2,
+            (ListMarker::Ordered { delimiter: d1, .. }, ListMarker::Ordered { delimiter: d2, .. }) => {
+                d1 == d2
+            }
+            _ => false,
+        }
+    }
 }
 
 /// List Item 시작 정보
@@ -115,4 +126,49 @@ pub enum ParsingContext {
         /// tight 리스트 여부 (아이템 간 빈 줄 없음)
         tight: bool,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    // === ListMarker::to_list_type 테스트 ===
+    #[rstest]
+    #[case(ListMarker::Bullet('-'), ListType::Bullet, 1)]
+    #[case(ListMarker::Bullet('+'), ListType::Bullet, 1)]
+    #[case(ListMarker::Bullet('*'), ListType::Bullet, 1)]
+    #[case(ListMarker::Ordered { start: 1, delimiter: '.' }, ListType::Ordered { delimiter: '.' }, 1)]
+    #[case(ListMarker::Ordered { start: 5, delimiter: '.' }, ListType::Ordered { delimiter: '.' }, 5)]
+    #[case(ListMarker::Ordered { start: 1, delimiter: ')' }, ListType::Ordered { delimiter: ')' }, 1)]
+    fn test_to_list_type(
+        #[case] marker: ListMarker,
+        #[case] expected_type: ListType,
+        #[case] expected_start: usize,
+    ) {
+        let (list_type, start) = marker.to_list_type();
+        assert_eq!(list_type, expected_type);
+        assert_eq!(start, expected_start);
+    }
+
+    // === ListMarker::is_same_type 테스트 ===
+    #[rstest]
+    // 같은 Bullet 마커
+    #[case(ListMarker::Bullet('-'), ListMarker::Bullet('-'), true)]
+    #[case(ListMarker::Bullet('+'), ListMarker::Bullet('+'), true)]
+    #[case(ListMarker::Bullet('*'), ListMarker::Bullet('*'), true)]
+    // 다른 Bullet 마커
+    #[case(ListMarker::Bullet('-'), ListMarker::Bullet('+'), false)]
+    #[case(ListMarker::Bullet('-'), ListMarker::Bullet('*'), false)]
+    // 같은 Ordered 마커 (delimiter만 비교, start는 무관)
+    #[case(ListMarker::Ordered { start: 1, delimiter: '.' }, ListMarker::Ordered { start: 1, delimiter: '.' }, true)]
+    #[case(ListMarker::Ordered { start: 1, delimiter: '.' }, ListMarker::Ordered { start: 5, delimiter: '.' }, true)]
+    #[case(ListMarker::Ordered { start: 1, delimiter: ')' }, ListMarker::Ordered { start: 1, delimiter: ')' }, true)]
+    // 다른 Ordered 마커
+    #[case(ListMarker::Ordered { start: 1, delimiter: '.' }, ListMarker::Ordered { start: 1, delimiter: ')' }, false)]
+    // Bullet과 Ordered 혼합
+    #[case(ListMarker::Bullet('-'), ListMarker::Ordered { start: 1, delimiter: '.' }, false)]
+    fn test_is_same_type(#[case] a: ListMarker, #[case] b: ListMarker, #[case] expected: bool) {
+        assert_eq!(a.is_same_type(&b), expected);
+    }
 }

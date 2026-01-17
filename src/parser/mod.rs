@@ -8,12 +8,13 @@ mod context;
 mod fenced_code_block;
 mod heading;
 mod helpers;
+mod list;
 mod list_item;
 mod paragraph;
 mod thematic_break;
 
 use crate::node::Node;
-use context::{FencedCodeBlockStart, ListItemStart, ListMarker, ParsingContext};
+use context::{FencedCodeBlockStart, ListItemStart, ParsingContext};
 use fenced_code_block::{
     is_end as is_end_fenced_code_block, try_start as try_start_fenced_code_block,
 };
@@ -215,7 +216,7 @@ fn process_line_in_list(
     // 새 List Item 시작인지 확인
     if let Some(new_start) = list_item::try_start(line) {
         // 같은 마커 타입인지 확인
-        if is_same_list_type(&first_item_start.marker, &new_start.marker) {
+        if first_item_start.marker.is_same_type(&new_start.marker) {
             // 현재 아이템 저장하고 새 아이템 시작
             let items = push_item(items, current_item_lines);
             let context = ParsingContext::List {
@@ -236,16 +237,6 @@ fn process_line_in_list(
     process_line_in_none(line, children)
 }
 
-/// 같은 리스트 타입인지 확인
-fn is_same_list_type(a: &ListMarker, b: &ListMarker) -> bool {
-    match (a, b) {
-        (ListMarker::Bullet(c1), ListMarker::Bullet(c2)) => c1 == c2,
-        (ListMarker::Ordered { delimiter: d1, .. }, ListMarker::Ordered { delimiter: d2, .. }) => {
-            d1 == d2
-        }
-        _ => false,
-    }
-}
 
 
 /// 아이템 리스트에 아이템 추가
@@ -408,99 +399,5 @@ mod tests {
         let block = &doc.children()[0];
         assert!(block.is_code_block(), "CodeBlock이 아님: {:?}", block);
         assert_eq!(block.content(), expected_content);
-    }
-
-    // === List 파싱 테스트 ===
-
-    /// 단일 아이템 Bullet List
-    #[rstest]
-    #[case("- item", 1, "item")]
-    #[case("+ item", 1, "item")]
-    #[case("* item", 1, "item")]
-    fn single_bullet_list_item(#[case] input: &str, #[case] item_count: usize, #[case] text: &str) {
-        let doc = parse(input);
-        assert_eq!(doc.children().len(), 1, "문서에 List가 하나여야 함");
-
-        let list = &doc.children()[0];
-        assert!(list.is_list(), "List여야 함: {:?}", list);
-        assert_eq!(list.children().len(), item_count, "아이템 수");
-
-        let item = &list.children()[0];
-        assert!(item.is_list_item(), "ListItem이어야 함");
-
-        // ListItem 안에 Paragraph가 있고, 그 안에 Text가 있음
-        let para = &item.children()[0];
-        assert_eq!(para.children()[0].as_text(), text);
-    }
-
-    /// 여러 아이템 tight Bullet List
-    #[rstest]
-    #[case("- a\n- b", 2, &["a", "b"])]
-    #[case("- a\n- b\n- c", 3, &["a", "b", "c"])]
-    fn multi_item_bullet_list(#[case] input: &str, #[case] item_count: usize, #[case] texts: &[&str]) {
-        let doc = parse(input);
-        assert_eq!(doc.children().len(), 1, "문서에 List가 하나여야 함");
-
-        let list = &doc.children()[0];
-        assert!(list.is_list(), "List여야 함");
-        assert!(list.is_tight(), "tight List여야 함");
-        assert_eq!(list.children().len(), item_count, "아이템 수");
-
-        for (i, text) in texts.iter().enumerate() {
-            let item = &list.children()[i];
-            let para = &item.children()[0];
-            assert_eq!(para.children()[0].as_text(), *text, "아이템 {}", i);
-        }
-    }
-
-    /// 단일 아이템 Ordered List
-    #[rstest]
-    #[case("1. item", '.', 1, "item")]
-    #[case("1) item", ')', 1, "item")]
-    #[case("5. item", '.', 5, "item")]
-    #[case("10. item", '.', 10, "item")]
-    fn single_ordered_list_item(
-        #[case] input: &str,
-        #[case] delimiter: char,
-        #[case] start: usize,
-        #[case] text: &str,
-    ) {
-        use crate::node::ListType;
-
-        let doc = parse(input);
-        assert_eq!(doc.children().len(), 1, "문서에 List가 하나여야 함");
-
-        let list = &doc.children()[0];
-        assert!(list.is_list(), "List여야 함: {:?}", list);
-        assert_eq!(
-            *list.list_type(),
-            ListType::Ordered { delimiter },
-            "Ordered List여야 함"
-        );
-        assert_eq!(list.list_start(), start, "시작 번호");
-
-        let item = &list.children()[0];
-        let para = &item.children()[0];
-        assert_eq!(para.children()[0].as_text(), text);
-    }
-
-    /// 여러 아이템 tight Ordered List
-    #[rstest]
-    #[case("1. a\n2. b", 2, &["a", "b"])]
-    #[case("1. a\n2. b\n3. c", 3, &["a", "b", "c"])]
-    fn multi_item_ordered_list(#[case] input: &str, #[case] item_count: usize, #[case] texts: &[&str]) {
-        let doc = parse(input);
-        assert_eq!(doc.children().len(), 1, "문서에 List가 하나여야 함");
-
-        let list = &doc.children()[0];
-        assert!(list.is_list(), "List여야 함");
-        assert!(list.is_tight(), "tight List여야 함");
-        assert_eq!(list.children().len(), item_count, "아이템 수");
-
-        for (i, text) in texts.iter().enumerate() {
-            let item = &list.children()[i];
-            let para = &item.children()[0];
-            assert_eq!(para.children()[0].as_text(), *text, "아이템 {}", i);
-        }
     }
 }
