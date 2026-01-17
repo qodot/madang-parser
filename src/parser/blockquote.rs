@@ -24,11 +24,14 @@ where
     // 각 줄에서 > 마커 제거
     let content = strip_blockquote_markers(trimmed);
 
-    // 재귀적으로 내용 파싱
-    let inner = parse_block(&content);
-    Some(Node::Blockquote {
-        children: vec![inner],
-    })
+    // \n\n으로 분리하여 각 블록 파싱
+    let children: Vec<Node> = content
+        .split("\n\n")
+        .filter(|s| !s.is_empty())
+        .map(|block| parse_block(block))
+        .collect();
+
+    Some(Node::Blockquote { children })
 }
 
 /// 각 줄에서 blockquote 마커(>) 제거
@@ -106,6 +109,24 @@ mod tests {
                 assert!(!doc.children()[0].is_blockquote(), "Blockquote가 아니어야 함, 입력: {}", input);
                 assert_eq!(doc.children()[0].children()[0].as_text(), text, "입력: {}", input);
             }
+        }
+    }
+
+    // Blockquote 내 복수 단락 테스트
+    #[rstest]
+    #[case("> line1\n>\n> line2", &["line1", "line2"])]              // 빈 > 로 분리
+    #[case("> a\n>\n> b\n>\n> c", &["a", "b", "c"])]                 // 3개 단락
+    fn test_blockquote_multiple_paragraphs(#[case] input: &str, #[case] texts: &[&str]) {
+        let doc = parse(input);
+        assert_eq!(doc.children().len(), 1, "입력: {}", input);
+
+        let blockquote = &doc.children()[0];
+        assert!(blockquote.is_blockquote(), "입력: {}", input);
+        assert_eq!(blockquote.children().len(), texts.len(), "단락 수 불일치, 입력: {}", input);
+
+        for (i, text) in texts.iter().enumerate() {
+            let para = &blockquote.children()[i];
+            assert_eq!(para.children()[0].as_text(), *text, "단락 {}, 입력: {}", i, input);
         }
     }
 }
