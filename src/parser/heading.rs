@@ -3,6 +3,7 @@
 //! CommonMark 명세: https://spec.commonmark.org/0.31.2/#atx-headings
 
 use crate::node::Node;
+use super::helpers::count_leading_char;
 
 /// ATX Heading 파싱 시도
 /// 성공하면 Some(Node::Heading), 실패하면 None
@@ -18,7 +19,7 @@ pub fn parse(trimmed: &str, indent: usize) -> Option<Node> {
     }
 
     // # 개수 세기
-    let level = trimmed.chars().take_while(|c| *c == '#').count();
+    let level = count_leading_char(trimmed, '#');
 
     // 레벨 1~6만 유효
     if level < 1 || level > 6 {
