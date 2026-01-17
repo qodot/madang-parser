@@ -55,7 +55,8 @@ fn process_line(line: &str, context: ParsingContext, children: Vec<Node>) -> Par
             items,
             current_item_lines,
             tight,
-        } => process_line_in_list(line, first_item_start, items, current_item_lines, tight, children),
+            pending_blank,
+        } => process_line_in_list(line, first_item_start, items, current_item_lines, tight, pending_blank, children),
     }
 }
 
@@ -105,6 +106,7 @@ fn process_line_in_none(line: &str, children: Vec<Node>) -> ParserState {
             items: Vec::new(),
             current_item_lines: vec![content],
             tight: true,
+            pending_blank: false,
         };
         return (children, context);
     }
@@ -202,15 +204,28 @@ fn process_line_in_list(
     items: Vec<Vec<String>>,
     current_item_lines: Vec<String>,
     tight: bool,
+    pending_blank: bool,
     children: Vec<Node>,
 ) -> ParserState {
-    // 빈 줄이면 List 종료
+    // 빈 줄 처리
     if line.trim().is_empty() {
-        let (list_type, start) = first_item_start.marker.to_list_type();
-        let all_items = push_item(items, current_item_lines);
-        let list_node = Node::build_list(list_type, start, tight, all_items, paragraph::parse);
-        let children = push_node(children, list_node);
-        return (children, ParsingContext::None);
+        // 이미 빈 줄을 봤으면 (두 번 연속) List 종료
+        if pending_blank {
+            let (list_type, start) = first_item_start.marker.to_list_type();
+            let all_items = push_item(items, current_item_lines);
+            let list_node = Node::build_list(list_type, start, tight, all_items, paragraph::parse);
+            let children = push_node(children, list_node);
+            return (children, ParsingContext::None);
+        }
+        // 첫 번째 빈 줄 → pending_blank 설정, tight=false
+        let context = ParsingContext::List {
+            first_item_start,
+            items,
+            current_item_lines,
+            tight: false, // 빈 줄이 있으면 loose list
+            pending_blank: true,
+        };
+        return (children, context);
     }
 
     // 새 List Item 시작인지 확인
@@ -224,9 +239,19 @@ fn process_line_in_list(
                 items,
                 current_item_lines: vec![new_start.content],
                 tight,
+                pending_blank: false, // 새 아이템이 시작되면 pending_blank 해제
             };
             return (children, context);
         }
+    }
+
+    // pending_blank 상태에서 List Item이 아닌 줄 → List 종료
+    if pending_blank {
+        let (list_type, start) = first_item_start.marker.to_list_type();
+        let all_items = push_item(items, current_item_lines);
+        let list_node = Node::build_list(list_type, start, tight, all_items, paragraph::parse);
+        let children = push_node(children, list_node);
+        return process_line_in_none(line, children);
     }
 
     // 다른 블록이면 List 종료 후 해당 블록 처리
@@ -335,6 +360,7 @@ fn finalize_context(context: ParsingContext, children: Vec<Node>) -> Vec<Node> {
             items,
             current_item_lines,
             tight,
+            pending_blank: _, // finalize 시에는 사용하지 않음
         } => {
             let (list_type, start) = first_item_start.marker.to_list_type();
             let all_items = push_item(items, current_item_lines);

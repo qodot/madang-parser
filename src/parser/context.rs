@@ -125,6 +125,8 @@ pub enum ParsingContext {
         current_item_lines: Vec<String>,
         /// tight 리스트 여부 (아이템 간 빈 줄 없음)
         tight: bool,
+        /// 빈 줄을 만났지만 아직 처리 대기 중
+        pending_blank: bool,
     },
 }
 

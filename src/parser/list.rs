@@ -109,4 +109,27 @@ mod tests {
             assert_eq!(para.children()[0].as_text(), *text, "아이템 {}", i);
         }
     }
+
+    // === Loose List 테스트 ===
+
+    /// 아이템 간 빈 줄이 있는 Loose List
+    #[rstest]
+    #[case("- a\n\n- b", 2, &["a", "b"])]                    // 기본 loose
+    #[case("- a\n\n- b\n\n- c", 3, &["a", "b", "c"])]        // 3개 아이템
+    #[case("1. a\n\n2. b", 2, &["a", "b"])]                  // Ordered loose
+    fn loose_list(#[case] input: &str, #[case] item_count: usize, #[case] texts: &[&str]) {
+        let doc = parse(input);
+        assert_eq!(doc.children().len(), 1, "문서에 List가 하나여야 함");
+
+        let list = &doc.children()[0];
+        assert!(list.is_list(), "List여야 함");
+        assert!(!list.is_tight(), "loose List여야 함 (tight=false)");
+        assert_eq!(list.children().len(), item_count, "아이템 수");
+
+        for (i, text) in texts.iter().enumerate() {
+            let item = &list.children()[i];
+            let para = &item.children()[0];
+            assert_eq!(para.children()[0].as_text(), *text, "아이템 {}", i);
+        }
+    }
 }
