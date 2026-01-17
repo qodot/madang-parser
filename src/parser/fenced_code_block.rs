@@ -3,11 +3,12 @@
 //! 백틱(\`\`\`) 또는 틸드(~~~)로 감싸진 코드 블록을 파싱합니다.
 
 use crate::node::Node;
+use super::context::FencedCodeBlockStart;
 use super::helpers::{count_leading_char, remove_indent};
 
 /// Fenced Code Block 시작 줄인지 확인
-/// 반환: (fence_char, fence_len, info, indent)
-pub(crate) fn try_start(line: &str) -> Option<(char, usize, Option<String>, usize)> {
+/// 성공 시 시작 정보(FencedCodeBlockStart) 반환
+pub(crate) fn try_start(line: &str) -> Option<FencedCodeBlockStart> {
     let indent = count_leading_char(line, ' ');
     if indent > 3 {
         return None;
@@ -33,7 +34,12 @@ pub(crate) fn try_start(line: &str) -> Option<(char, usize, Option<String>, usiz
         }
     };
 
-    Some((fence_char, fence_len, info, indent))
+    Some(FencedCodeBlockStart {
+        fence_char,
+        fence_len,
+        info,
+        indent,
+    })
 }
 
 /// 닫는 펜스인지 확인
@@ -65,12 +71,12 @@ pub fn parse(text: &str, _indent: usize) -> Option<Node> {
 
     // 여는 펜스의 들여쓰기 계산 (0-3칸만 허용)
     let first_line = lines[0];
-    let (fence_char, fence_len, info, opening_indent) = try_start(first_line)?;
+    let start = try_start(first_line)?;
 
     // 닫는 펜스 찾기
     let has_closing_fence = if lines.len() >= 2 {
         let last_line = lines[lines.len() - 1];
-        is_end(last_line, fence_char, fence_len)
+        is_end(last_line, start.fence_char, start.fence_len)
     } else {
         false
     };
@@ -84,11 +90,11 @@ pub fn parse(text: &str, _indent: usize) -> Option<Node> {
 
     let content = content_lines
         .iter()
-        .map(|line| remove_indent(line, opening_indent))
+        .map(|line| remove_indent(line, start.indent))
         .collect::<Vec<_>>()
         .join("\n");
 
-    Some(Node::CodeBlock { info, content })
+    Some(Node::CodeBlock { info: start.info, content })
 }
 
 #[cfg(test)]
@@ -127,13 +133,13 @@ mod tests {
     fn test_try_start(#[case] input: &str, #[case] expected: Option<(char, usize, Option<&str>, usize)>) {
         let result = try_start(input);
         match expected {
-            Some((char, len, info, indent)) => {
+            Some((expected_char, expected_len, expected_info, expected_indent)) => {
                 assert!(result.is_some(), "시작이어야 함: {:?}", input);
-                let (c, l, i, ind) = result.unwrap();
-                assert_eq!(c, char, "fence_char");
-                assert_eq!(l, len, "fence_len");
-                assert_eq!(i.as_deref(), info, "info");
-                assert_eq!(ind, indent, "indent");
+                let start = result.unwrap();
+                assert_eq!(start.fence_char, expected_char, "fence_char");
+                assert_eq!(start.fence_len, expected_len, "fence_len");
+                assert_eq!(start.info.as_deref(), expected_info, "info");
+                assert_eq!(start.indent, expected_indent, "indent");
             }
             None => {
                 assert!(result.is_none(), "시작이 아니어야 함: {:?}", input);

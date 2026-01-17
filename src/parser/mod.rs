@@ -4,6 +4,7 @@
 //! fold 패턴을 사용하여 불변 상태 전이를 구현합니다.
 
 mod blockquote;
+mod context;
 mod fenced_code_block;
 mod heading;
 mod helpers;
@@ -11,31 +12,11 @@ mod paragraph;
 mod thematic_break;
 
 use crate::node::Node;
+use context::{FencedCodeBlockStart, ParsingContext};
 use fenced_code_block::{
     is_end as is_end_fenced_code_block, try_start as try_start_fenced_code_block,
 };
 use helpers::{calculate_indent, remove_indent};
-
-/// 파싱 중인 컨텍스트 (상태 기계의 상태)
-enum ParsingContext {
-    /// 새 블록 시작 대기
-    None,
-
-    /// Fenced Code Block 파싱 중
-    FencedCodeBlock {
-        fence_char: char,
-        fence_len: usize,
-        info: Option<String>,
-        content: Vec<String>,
-        indent: usize,
-    },
-
-    /// Paragraph 파싱 중 (여러 줄이 하나의 문단)
-    Paragraph { lines: Vec<String> },
-
-    /// Blockquote 파싱 중 (여러 줄 수집)
-    Blockquote { lines: Vec<String> },
-}
 
 /// 파서 상태: (완성된 노드들, 현재 컨텍스트)
 type ParserState = (Vec<Node>, ParsingContext);
@@ -62,14 +43,8 @@ pub fn parse(input: &str) -> Node {
 fn process_line(line: &str, context: ParsingContext, children: Vec<Node>) -> ParserState {
     match context {
         ParsingContext::None => process_line_in_none(line, children),
-        ParsingContext::FencedCodeBlock {
-            fence_char,
-            fence_len,
-            info,
-            content,
-            indent,
-        } => {
-            process_line_in_code_block(line, fence_char, fence_len, info, content, indent, children)
+        ParsingContext::FencedCodeBlock { start, content } => {
+            process_line_in_code_block(line, start, content, children)
         }
         ParsingContext::Paragraph { lines } => process_line_in_paragraph(line, lines, children),
         ParsingContext::Blockquote { lines } => process_line_in_blockquote(line, lines, children),
@@ -84,13 +59,10 @@ fn process_line_in_none(line: &str, children: Vec<Node>) -> ParserState {
     }
 
     // Fenced Code Block 시작 감지
-    if let Some((fence_char, fence_len, info, indent)) = try_start_fenced_code_block(line) {
+    if let Some(start) = try_start_fenced_code_block(line) {
         let context = ParsingContext::FencedCodeBlock {
-            fence_char,
-            fence_len,
-            info,
+            start,
             content: Vec::new(),
-            indent,
         };
         return (children, context);
     }
@@ -127,18 +99,15 @@ fn process_line_in_none(line: &str, children: Vec<Node>) -> ParserState {
 /// Code Block 상태에서 줄 처리
 fn process_line_in_code_block(
     line: &str,
-    fence_char: char,
-    fence_len: usize,
-    info: Option<String>,
+    start: FencedCodeBlockStart,
     content: Vec<String>,
-    indent: usize,
     children: Vec<Node>,
 ) -> ParserState {
     // 닫는 펜스인지 확인
-    if is_end_fenced_code_block(line, fence_char, fence_len) {
+    if is_end_fenced_code_block(line, start.fence_char, start.fence_len) {
         let content_str = content.join("\n");
         let node = Node::CodeBlock {
-            info,
+            info: start.info,
             content: content_str,
         };
         let children = push_node(children, node);
@@ -146,16 +115,10 @@ fn process_line_in_code_block(
     }
 
     // 코드 줄 추가
-    let code_line = remove_indent(line, indent);
+    let code_line = remove_indent(line, start.indent);
     let content = push_string(content, code_line.to_string());
 
-    let context = ParsingContext::FencedCodeBlock {
-        fence_char,
-        fence_len,
-        info,
-        content,
-        indent,
-    };
+    let context = ParsingContext::FencedCodeBlock { start, content };
     (children, context)
 }
 
@@ -169,15 +132,12 @@ fn process_line_in_paragraph(line: &str, lines: Vec<String>, children: Vec<Node>
     }
 
     // Fenced Code Block 시작이면 Paragraph 종료 후 Code Block 시작
-    if let Some((fence_char, fence_len, info, indent)) = try_start_fenced_code_block(line) {
+    if let Some(start) = try_start_fenced_code_block(line) {
         let text = lines.join("\n");
         let children = push_node(children, paragraph::parse(&text));
         let context = ParsingContext::FencedCodeBlock {
-            fence_char,
-            fence_len,
-            info,
+            start,
             content: Vec::new(),
-            indent,
         };
         return (children, context);
     }
@@ -232,7 +192,7 @@ fn process_line_in_blockquote(line: &str, lines: Vec<String>, children: Vec<Node
     }
 
     // Fenced Code Block 시작이면 Blockquote 종료
-    if let Some((fence_char, fence_len, info, fence_indent)) = try_start_fenced_code_block(line) {
+    if let Some(start) = try_start_fenced_code_block(line) {
         let text = lines.join("\n");
         let children = if let Some(node) = blockquote::parse(&text, 0, parse_block_simple) {
             push_node(children, node)
@@ -240,11 +200,8 @@ fn process_line_in_blockquote(line: &str, lines: Vec<String>, children: Vec<Node
             children
         };
         let context = ParsingContext::FencedCodeBlock {
-            fence_char,
-            fence_len,
-            info,
+            start,
             content: Vec::new(),
-            indent: fence_indent,
         };
         return (children, context);
     }
@@ -283,10 +240,10 @@ fn process_line_in_blockquote(line: &str, lines: Vec<String>, children: Vec<Node
 fn finalize_context(context: ParsingContext, children: Vec<Node>) -> Vec<Node> {
     match context {
         ParsingContext::None => children,
-        ParsingContext::FencedCodeBlock { info, content, .. } => {
+        ParsingContext::FencedCodeBlock { start, content } => {
             let content_str = content.join("\n");
             let node = Node::CodeBlock {
-                info,
+                info: start.info,
                 content: content_str,
             };
             push_node(children, node)
