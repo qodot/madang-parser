@@ -31,7 +31,9 @@ fn parse_block(block: &str) -> Node {
     let trimmed = block.trim();
 
     // 순서대로 파싱 시도, 첫 번째 성공 반환
-    thematic_break::parse(trimmed, indent)
+    // 주의: fenced_code_block은 trimmed 대신 block을 사용 (들여쓰기 보존)
+    fenced_code_block::parse(block, indent)
+        .or_else(|| thematic_break::parse(trimmed, indent))
         .or_else(|| blockquote::parse(trimmed, indent, parse_block))
         .or_else(|| heading::parse(trimmed, indent))
         .unwrap_or_else(|| paragraph::parse(trimmed))
