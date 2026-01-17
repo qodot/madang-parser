@@ -24,20 +24,16 @@ pub(crate) fn try_start(line: &str) -> Option<ListItemStart> {
 }
 
 /// List 종료 여부 확인
-/// Ok: 종료 (Reprocess 또는 Consumed)
-/// Err: 계속 (Blank 또는 NewItem)
+/// Ok: 종료 (Reprocess)
+/// Err: 계속 (Blank, NewItem 또는 ContinuationLine)
 pub(crate) fn try_end(
     line: &str,
     marker: &ListMarker,
-    pending_blank: bool,
+    content_indent: usize,
 ) -> Result<ListEndReason, ListContinueReason> {
-    // 빈 줄 처리
+    // 빈 줄 처리 (항상 계속, 개수는 호출자가 추적)
     if line.trim().is_empty() {
-        return if pending_blank {
-            Ok(ListEndReason::Consumed) // 두 번 연속 빈 줄 → 종료
-        } else {
-            Err(ListContinueReason::Blank) // 첫 번째 빈 줄 → 계속
-        };
+        return Err(ListContinueReason::Blank);
     }
 
     // 같은 마커 타입의 List Item이면 계속
@@ -45,6 +41,13 @@ pub(crate) fn try_end(
         if marker.is_same_type(&new_start.marker) {
             return Err(ListContinueReason::NewItem(new_start));
         }
+    }
+
+    // Continuation line: content_indent 이상 들여쓰기 확인
+    let indent = count_leading_char(line, ' ');
+    if indent >= content_indent {
+        let content = line[content_indent..].to_string();
+        return Err(ListContinueReason::ContinuationLine(content));
     }
 
     // 다른 마커 또는 리스트가 아닌 내용 → 종료
@@ -267,27 +270,15 @@ mod tests {
 
     // === try_end 테스트 ===
 
-    /// 빈 줄 처리 테스트
-    /// pending_blank=false: 첫 빈 줄 → Err(Blank)
-    /// pending_blank=true: 두 번째 빈 줄 → Ok(Consumed)
+    /// 빈 줄 처리 테스트 - 항상 Err(Blank) 반환
     #[rstest]
-    #[case("", false, false)]   // 빈 줄, pending=false → 계속 (Blank)
-    #[case("  ", false, false)] // 공백만, pending=false → 계속 (Blank)
-    #[case("", true, true)]     // 빈 줄, pending=true → 종료 (Consumed)
-    #[case("  ", true, true)]   // 공백만, pending=true → 종료 (Consumed)
-    fn test_try_end_blank_line(
-        #[case] line: &str,
-        #[case] pending_blank: bool,
-        #[case] should_end: bool,
-    ) {
+    #[case("")]      // 빈 줄
+    #[case("  ")]    // 공백만
+    #[case("\t")]    // 탭만
+    fn test_try_end_blank_line(#[case] line: &str) {
         let marker = ListMarker::Bullet('-');
-        let result = try_end(line, &marker, pending_blank);
-
-        if should_end {
-            assert!(matches!(result, Ok(ListEndReason::Consumed)), "종료(Consumed)여야 함");
-        } else {
-            assert!(matches!(result, Err(ListContinueReason::Blank)), "계속(Blank)이어야 함");
-        }
+        let result = try_end(line, &marker, 2);
+        assert!(matches!(result, Err(ListContinueReason::Blank)), "계속(Blank)이어야 함");
     }
 
     /// 같은 마커 타입 → 새 아이템으로 계속
@@ -303,7 +294,7 @@ mod tests {
         #[case] line: &str,
         #[case] marker: ListMarker,
     ) {
-        let result = try_end(line, &marker, false);
+        let result = try_end(line, &marker, 2);
         assert!(matches!(result, Err(ListContinueReason::NewItem(_))), "새 아이템으로 계속해야 함: {:?}", result);
     }
 
@@ -320,7 +311,7 @@ mod tests {
         #[case] line: &str,
         #[case] marker: ListMarker,
     ) {
-        let result = try_end(line, &marker, false);
+        let result = try_end(line, &marker, 2);
         assert!(matches!(result, Ok(ListEndReason::Reprocess)), "종료(Reprocess)여야 함: {:?}", result);
     }
 
@@ -332,7 +323,27 @@ mod tests {
     #[case("```code")]
     fn test_try_end_non_list_content_ends(#[case] line: &str) {
         let marker = ListMarker::Bullet('-');
-        let result = try_end(line, &marker, false);
+        let result = try_end(line, &marker, 2);
         assert!(matches!(result, Ok(ListEndReason::Reprocess)), "종료(Reprocess)여야 함: {:?}", result);
+    }
+
+    /// Continuation line (content_indent 이상 들여쓰기)
+    #[rstest]
+    #[case("  continued", 2, "continued")]     // 정확히 content_indent
+    #[case("   continued", 2, " continued")]   // content_indent + 1
+    #[case("    continued", 2, "  continued")] // content_indent + 2
+    fn test_try_end_continuation_line(
+        #[case] line: &str,
+        #[case] content_indent: usize,
+        #[case] expected_content: &str,
+    ) {
+        let marker = ListMarker::Bullet('-');
+        let result = try_end(line, &marker, content_indent);
+        match result {
+            Err(ListContinueReason::ContinuationLine(content)) => {
+                assert_eq!(content, expected_content, "continuation 내용");
+            }
+            _ => panic!("ContinuationLine이어야 함: {:?}", result),
+        }
     }
 }

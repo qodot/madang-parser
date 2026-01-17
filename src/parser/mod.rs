@@ -57,8 +57,8 @@ fn process_line(line: &str, context: ParsingContext, children: Vec<Node>) -> Par
             items,
             current_item_lines,
             tight,
-            pending_blank,
-        } => process_line_in_list(line, first_item_start, items, current_item_lines, tight, pending_blank, children),
+            pending_blank_count,
+        } => process_line_in_list(line, first_item_start, items, current_item_lines, tight, pending_blank_count, children),
     }
 }
 
@@ -108,7 +108,7 @@ fn process_line_in_none(line: &str, children: Vec<Node>) -> ParserState {
             items: Vec::new(),
             current_item_lines: vec![content],
             tight: true,
-            pending_blank: false,
+            pending_blank_count: 0,
         };
         return (children, context);
     }
@@ -206,18 +206,14 @@ fn process_line_in_list(
     items: Vec<Vec<String>>,
     current_item_lines: Vec<String>,
     tight: bool,
-    pending_blank: bool,
+    pending_blank_count: usize,
     children: Vec<Node>,
 ) -> ParserState {
-    match list_item::try_end(line, &first_item_start.marker, pending_blank) {
+    match list_item::try_end(line, &first_item_start.marker, first_item_start.content_indent) {
         // 종료
         Ok(ListEndReason::Reprocess) => {
             let children = finalize_list(&first_item_start, items, current_item_lines, tight, children);
             process_line_in_none(line, children)
-        }
-        Ok(ListEndReason::Consumed) => {
-            let children = finalize_list(&first_item_start, items, current_item_lines, tight, children);
-            (children, ParsingContext::None)
         }
         // 계속
         Err(ListContinueReason::Blank) => {
@@ -225,19 +221,37 @@ fn process_line_in_list(
                 first_item_start,
                 items,
                 current_item_lines,
-                tight: false, // 빈 줄 → loose list
-                pending_blank: true,
+                tight,
+                pending_blank_count: pending_blank_count + 1,
             };
             (children, context)
         }
         Err(ListContinueReason::NewItem(new_start)) => {
             let items = push_item(items, current_item_lines);
+            // 빈 줄이 있었으면 loose list
+            let tight = tight && pending_blank_count == 0;
             let context = ParsingContext::List {
                 first_item_start,
                 items,
                 current_item_lines: vec![new_start.content],
                 tight,
-                pending_blank: false,
+                pending_blank_count: 0,
+            };
+            (children, context)
+        }
+        Err(ListContinueReason::ContinuationLine(content)) => {
+            // 대기 중인 빈 줄을 내용에 추가
+            let mut lines = current_item_lines;
+            for _ in 0..pending_blank_count {
+                lines = push_string(lines, String::new());
+            }
+            let lines = push_string(lines, content);
+            let context = ParsingContext::List {
+                first_item_start,
+                items,
+                current_item_lines: lines,
+                tight,
+                pending_blank_count: 0,
             };
             (children, context)
         }
@@ -356,7 +370,7 @@ fn finalize_context(context: ParsingContext, children: Vec<Node>) -> Vec<Node> {
             items,
             current_item_lines,
             tight,
-            pending_blank: _,
+            pending_blank_count: _,
         } => finalize_list(&first_item_start, items, current_item_lines, tight, children)
     }
 }

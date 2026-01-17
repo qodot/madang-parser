@@ -97,8 +97,6 @@ impl ListItemStart {
 pub enum ListEndReason {
     /// 줄 다시 처리 필요 (다른 블록/새 리스트)
     Reprocess,
-    /// 줄 소비됨 (빈 줄 두 번)
-    Consumed,
 }
 
 /// List 계속 사유
@@ -108,6 +106,8 @@ pub enum ListContinueReason {
     Blank,
     /// 새 아이템
     NewItem(ListItemStart),
+    /// Continuation line (같은 아이템에 내용 추가)
+    ContinuationLine(String),
 }
 
 // =============================================================================
@@ -143,8 +143,8 @@ pub enum ParsingContext {
         current_item_lines: Vec<String>,
         /// tight 리스트 여부 (아이템 간 빈 줄 없음)
         tight: bool,
-        /// 빈 줄을 만났지만 아직 처리 대기 중
-        pending_blank: bool,
+        /// 대기 중인 빈 줄 개수 (continuation 시 내용에 추가)
+        pending_blank_count: usize,
     },
 }
 

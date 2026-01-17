@@ -189,4 +189,29 @@ mod tests {
         assert_eq!(list1.children().len(), first_list_texts.len());
         assert_eq!(list2.children().len(), second_list_texts.len());
     }
+
+    // === 다중 라인 아이템 테스트 ===
+
+    /// 다중 라인 아이템 (continuation line)
+    /// content_indent 이상 들여쓰기된 줄은 같은 아이템에 속함
+    /// 초과 들여쓰기는 내용의 일부로 유지됨
+    /// 빈 줄도 내용에 포함됨 (CommonMark 명세 준수)
+    #[rstest]
+    #[case("- line1\n  line2", 1, "line1\nline2")]              // 정확히 2칸 들여쓰기
+    #[case("- line1\n   line2", 1, "line1\n line2")]            // 3칸 → 초과 1칸 유지
+    #[case("- line1\n  line2\n  line3", 1, "line1\nline2\nline3")] // 3줄 continuation
+    #[case("- foo\n\n  bar", 1, "foo\n\nbar")]                  // 빈 줄 포함 (명세 준수)
+    #[case("- foo\n\n\n  bar", 1, "foo\n\n\nbar")]              // 빈 줄 여러 개
+    fn multi_line_item(#[case] input: &str, #[case] item_count: usize, #[case] expected_text: &str) {
+        let doc = parse(input);
+        assert_eq!(doc.children().len(), 1, "문서에 List가 하나여야 함");
+
+        let list = &doc.children()[0];
+        assert!(list.is_list(), "List여야 함: {:?}", list);
+        assert_eq!(list.children().len(), item_count, "아이템 수");
+
+        let item = &list.children()[0];
+        let para = &item.children()[0];
+        assert_eq!(para.children()[0].as_text(), expected_text, "다중 라인 텍스트");
+    }
 }
