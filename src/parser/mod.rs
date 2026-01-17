@@ -6,10 +6,15 @@
 mod blockquote;
 mod fenced_code_block;
 mod heading;
+mod helpers;
 mod paragraph;
 mod thematic_break;
 
 use crate::node::Node;
+use fenced_code_block::{
+    is_end as is_end_fenced_code_block, try_start as try_start_fenced_code_block,
+};
+use helpers::remove_indent;
 
 /// 파싱 중인 컨텍스트 (상태 기계의 상태)
 enum ParsingContext {
@@ -42,12 +47,10 @@ pub fn parse(input: &str) -> Node {
     }
 
     // fold: 각 줄을 처리하며 상태 전이
-    let (children, final_context) = input
-        .lines()
-        .fold(
-            (Vec::new(), ParsingContext::None),
-            |(children, context), line| process_line(line, context, children),
-        );
+    let (children, final_context) = input.lines().fold(
+        (Vec::new(), ParsingContext::None),
+        |(children, context), line| process_line(line, context, children),
+    );
 
     // 마지막 컨텍스트 마무리
     let children = finalize_context(final_context, children);
@@ -65,7 +68,9 @@ fn process_line(line: &str, context: ParsingContext, children: Vec<Node>) -> Par
             info,
             content,
             indent,
-        } => process_line_in_code_block(line, fence_char, fence_len, info, content, indent, children),
+        } => {
+            process_line_in_code_block(line, fence_char, fence_len, info, content, indent, children)
+        }
         ParsingContext::Paragraph { lines } => process_line_in_paragraph(line, lines, children),
         ParsingContext::Blockquote { lines } => process_line_in_blockquote(line, lines, children),
     }
@@ -119,37 +124,6 @@ fn process_line_in_none(line: &str, children: Vec<Node>) -> ParserState {
     (children, context)
 }
 
-/// Fenced Code Block 시작 줄인지 확인
-/// 반환: (fence_char, fence_len, info, indent)
-fn try_start_fenced_code_block(line: &str) -> Option<(char, usize, Option<String>, usize)> {
-    let indent = count_leading_spaces(line);
-    if indent > 3 {
-        return None;
-    }
-
-    let after_indent = &line[indent..];
-
-    let (fence_char, fence_len) = if after_indent.starts_with("```") {
-        ('`', count_leading_char(after_indent, '`'))
-    } else if after_indent.starts_with("~~~") {
-        ('~', count_leading_char(after_indent, '~'))
-    } else {
-        return None;
-    };
-
-    let info = {
-        let after_fence = &after_indent[fence_len..];
-        let trimmed = after_fence.trim();
-        if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed.to_string())
-        }
-    };
-
-    Some((fence_char, fence_len, info, indent))
-}
-
 /// Code Block 상태에서 줄 처리
 fn process_line_in_code_block(
     line: &str,
@@ -161,7 +135,7 @@ fn process_line_in_code_block(
     children: Vec<Node>,
 ) -> ParserState {
     // 닫는 펜스인지 확인
-    if is_closing_fence(line, fence_char, fence_len) {
+    if is_end_fenced_code_block(line, fence_char, fence_len) {
         let content_str = content.join("\n");
         let node = Node::CodeBlock {
             info,
@@ -185,29 +159,8 @@ fn process_line_in_code_block(
     (children, context)
 }
 
-/// 닫는 펜스인지 확인
-fn is_closing_fence(line: &str, fence_char: char, min_fence_len: usize) -> bool {
-    let indent = count_leading_spaces(line);
-    if indent > 3 {
-        return false;
-    }
-
-    let after_indent = &line[indent..];
-    let closing_len = count_leading_char(after_indent, fence_char);
-
-    if closing_len < min_fence_len {
-        return false;
-    }
-
-    after_indent[closing_len..].trim().is_empty()
-}
-
 /// Paragraph 상태에서 줄 처리
-fn process_line_in_paragraph(
-    line: &str,
-    lines: Vec<String>,
-    children: Vec<Node>,
-) -> ParserState {
+fn process_line_in_paragraph(line: &str, lines: Vec<String>, children: Vec<Node>) -> ParserState {
     // 빈 줄이면 Paragraph 종료
     if line.trim().is_empty() {
         let text = lines.join("\n");
@@ -263,11 +216,7 @@ fn process_line_in_paragraph(
 }
 
 /// Blockquote 상태에서 줄 처리
-fn process_line_in_blockquote(
-    line: &str,
-    lines: Vec<String>,
-    children: Vec<Node>,
-) -> ParserState {
+fn process_line_in_blockquote(line: &str, lines: Vec<String>, children: Vec<Node>) -> ParserState {
     let trimmed = line.trim();
     let indent = calculate_indent(line);
 
@@ -397,23 +346,6 @@ fn calculate_indent(block: &str) -> usize {
         .sum()
 }
 
-/// 앞 공백 개수 세기 (탭 미포함)
-fn count_leading_spaces(s: &str) -> usize {
-    s.chars().take_while(|&c| c == ' ').count()
-}
-
-/// 특정 문자가 연속으로 몇 개인지 세기
-fn count_leading_char(s: &str, c: char) -> usize {
-    s.chars().take_while(|&ch| ch == c).count()
-}
-
-/// 최대 n칸 공백 제거
-fn remove_indent(s: &str, n: usize) -> &str {
-    let spaces = count_leading_spaces(s);
-    let remove = spaces.min(n);
-    &s[remove..]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -428,7 +360,10 @@ mod tests {
     /// 코드 블록 안 빈 줄 테스트
     #[rstest]
     #[case("```\nline1\n\nline2\n```", "line1\n\nline2")]
-    #[case("```rust\nfn main() {\n\n    println!(\"hi\");\n}\n```", "fn main() {\n\n    println!(\"hi\");\n}")]
+    #[case(
+        "```rust\nfn main() {\n\n    println!(\"hi\");\n}\n```",
+        "fn main() {\n\n    println!(\"hi\");\n}"
+    )]
     fn code_block_with_blank_line(#[case] input: &str, #[case] expected_content: &str) {
         let doc = parse(input);
         assert_eq!(doc.children().len(), 1, "코드 블록이 분리됨: {:?}", doc);
