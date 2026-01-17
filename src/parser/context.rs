@@ -92,6 +92,24 @@ impl ListItemStart {
     }
 }
 
+/// List 종료 사유
+#[derive(Debug, Clone)]
+pub enum ListEndReason {
+    /// 줄 다시 처리 필요 (다른 블록/새 리스트)
+    Reprocess,
+    /// 줄 소비됨 (빈 줄 두 번)
+    Consumed,
+}
+
+/// List 계속 사유
+#[derive(Debug, Clone)]
+pub enum ListContinueReason {
+    /// 빈 줄 (pending_blank 설정)
+    Blank,
+    /// 새 아이템
+    NewItem(ListItemStart),
+}
+
 // =============================================================================
 // Parsing Context
 // =============================================================================

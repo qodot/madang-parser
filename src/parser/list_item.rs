@@ -2,7 +2,7 @@
 //!
 //! Bullet 마커 (-*+)와 Ordered 마커 (1. 1))를 감지합니다.
 
-use super::context::{ListItemStart, ListMarker};
+use super::context::{ListContinueReason, ListEndReason, ListItemStart, ListMarker};
 use super::helpers::count_leading_char;
 
 /// List Item 시작 줄인지 확인
@@ -21,6 +21,34 @@ pub(crate) fn try_start(line: &str) -> Option<ListItemStart> {
     try_bullet_marker(after_indent, indent)
         .or_else(|| try_ordered_marker(after_indent, indent))
         .map(|start| start.with_content_from(line))
+}
+
+/// List 종료 여부 확인
+/// Ok: 종료 (Reprocess 또는 Consumed)
+/// Err: 계속 (Blank 또는 NewItem)
+pub(crate) fn try_end(
+    line: &str,
+    marker: &ListMarker,
+    pending_blank: bool,
+) -> Result<ListEndReason, ListContinueReason> {
+    // 빈 줄 처리
+    if line.trim().is_empty() {
+        return if pending_blank {
+            Ok(ListEndReason::Consumed) // 두 번 연속 빈 줄 → 종료
+        } else {
+            Err(ListContinueReason::Blank) // 첫 번째 빈 줄 → 계속
+        };
+    }
+
+    // 같은 마커 타입의 List Item이면 계속
+    if let Some(new_start) = try_start(line) {
+        if marker.is_same_type(&new_start.marker) {
+            return Err(ListContinueReason::NewItem(new_start));
+        }
+    }
+
+    // 다른 마커 또는 리스트가 아닌 내용 → 종료
+    Ok(ListEndReason::Reprocess)
 }
 
 /// Bullet 마커 감지 (-*+)

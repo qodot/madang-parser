@@ -14,7 +14,9 @@ mod paragraph;
 mod thematic_break;
 
 use crate::node::Node;
-use context::{FencedCodeBlockStart, ListItemStart, ParsingContext};
+use context::{
+    FencedCodeBlockStart, ListContinueReason, ListEndReason, ListItemStart, ParsingContext,
+};
 use fenced_code_block::{
     is_end as is_end_fenced_code_block, try_start as try_start_fenced_code_block,
 };
@@ -207,59 +209,53 @@ fn process_line_in_list(
     pending_blank: bool,
     children: Vec<Node>,
 ) -> ParserState {
-    // 빈 줄 처리
-    if line.trim().is_empty() {
-        // 이미 빈 줄을 봤으면 (두 번 연속) List 종료
-        if pending_blank {
-            let (list_type, start) = first_item_start.marker.to_list_type();
-            let all_items = push_item(items, current_item_lines);
-            let list_node = Node::build_list(list_type, start, tight, all_items, paragraph::parse);
-            let children = push_node(children, list_node);
-            return (children, ParsingContext::None);
+    match list_item::try_end(line, &first_item_start.marker, pending_blank) {
+        // 종료
+        Ok(ListEndReason::Reprocess) => {
+            let children = finalize_list(&first_item_start, items, current_item_lines, tight, children);
+            process_line_in_none(line, children)
         }
-        // 첫 번째 빈 줄 → pending_blank 설정, tight=false
-        let context = ParsingContext::List {
-            first_item_start,
-            items,
-            current_item_lines,
-            tight: false, // 빈 줄이 있으면 loose list
-            pending_blank: true,
-        };
-        return (children, context);
-    }
-
-    // 새 List Item 시작인지 확인
-    if let Some(new_start) = list_item::try_start(line) {
-        // 같은 마커 타입인지 확인
-        if first_item_start.marker.is_same_type(&new_start.marker) {
-            // 현재 아이템 저장하고 새 아이템 시작
+        Ok(ListEndReason::Consumed) => {
+            let children = finalize_list(&first_item_start, items, current_item_lines, tight, children);
+            (children, ParsingContext::None)
+        }
+        // 계속
+        Err(ListContinueReason::Blank) => {
+            let context = ParsingContext::List {
+                first_item_start,
+                items,
+                current_item_lines,
+                tight: false, // 빈 줄 → loose list
+                pending_blank: true,
+            };
+            (children, context)
+        }
+        Err(ListContinueReason::NewItem(new_start)) => {
             let items = push_item(items, current_item_lines);
             let context = ParsingContext::List {
                 first_item_start,
                 items,
                 current_item_lines: vec![new_start.content],
                 tight,
-                pending_blank: false, // 새 아이템이 시작되면 pending_blank 해제
+                pending_blank: false,
             };
-            return (children, context);
+            (children, context)
         }
     }
+}
 
-    // pending_blank 상태에서 List Item이 아닌 줄 → List 종료
-    if pending_blank {
-        let (list_type, start) = first_item_start.marker.to_list_type();
-        let all_items = push_item(items, current_item_lines);
-        let list_node = Node::build_list(list_type, start, tight, all_items, paragraph::parse);
-        let children = push_node(children, list_node);
-        return process_line_in_none(line, children);
-    }
-
-    // 다른 블록이면 List 종료 후 해당 블록 처리
+/// List를 완성하여 children에 추가
+fn finalize_list(
+    first_item_start: &ListItemStart,
+    items: Vec<Vec<String>>,
+    current_item_lines: Vec<String>,
+    tight: bool,
+    children: Vec<Node>,
+) -> Vec<Node> {
     let (list_type, start) = first_item_start.marker.to_list_type();
     let all_items = push_item(items, current_item_lines);
     let list_node = Node::build_list(list_type, start, tight, all_items, paragraph::parse);
-    let children = push_node(children, list_node);
-    process_line_in_none(line, children)
+    push_node(children, list_node)
 }
 
 
@@ -360,13 +356,8 @@ fn finalize_context(context: ParsingContext, children: Vec<Node>) -> Vec<Node> {
             items,
             current_item_lines,
             tight,
-            pending_blank: _, // finalize 시에는 사용하지 않음
-        } => {
-            let (list_type, start) = first_item_start.marker.to_list_type();
-            let all_items = push_item(items, current_item_lines);
-            let list_node = Node::build_list(list_type, start, tight, all_items, paragraph::parse);
-            push_node(children, list_node)
-        }
+            pending_blank: _,
+        } => finalize_list(&first_item_start, items, current_item_lines, tight, children)
     }
 }
 
