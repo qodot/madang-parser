@@ -151,9 +151,9 @@ mod tests {
     #[case("first\n\n\nsecond", &["first", "second"])] // 연속 빈 줄
     fn test_paragraph(#[case] input: &str, #[case] expected: &[&str]) {
         let doc = parse(input);
-        assert_eq!(doc.children().len(), expected.len(), "input: {}", input);
+        assert_eq!(doc.children().len(), expected.len(), "입력: {}", input);
         for (i, text) in expected.iter().enumerate() {
-            assert_eq!(doc.children()[i].children()[0].as_text(), *text, "input: {}", input);
+            assert_eq!(doc.children()[i].children()[0].as_text(), *text, "입력: {}", input);
         }
     }
 
@@ -198,11 +198,11 @@ mod tests {
     #[case("  \t# foo", None, "# foo")]                   // 2칸 + 탭 = 6칸
     fn test_heading(#[case] input: &str, #[case] level: Option<u8>, #[case] text: &str) {
         let doc = parse(input);
-        assert_eq!(doc.children().len(), 1, "input: {}", input);
+        assert_eq!(doc.children().len(), 1, "입력: {}", input);
         if let Some(lvl) = level {
-            assert_eq!(doc.children()[0].level(), lvl, "input: {}", input);
+            assert_eq!(doc.children()[0].level(), lvl, "입력: {}", input);
         }
-        assert_eq!(doc.children()[0].children()[0].as_text(), text, "input: {}", input);
+        assert_eq!(doc.children()[0].children()[0].as_text(), text, "입력: {}", input);
     }
 
     // ============================================================
@@ -237,8 +237,8 @@ mod tests {
     #[case("a]***", false)]                          // 앞에 다른 문자
     fn test_thematic_break(#[case] input: &str, #[case] is_break: bool) {
         let doc = parse(input);
-        assert_eq!(doc.children().len(), 1, "input: {}", input);
-        assert_eq!(doc.children()[0].is_thematic_break(), is_break, "input: {}", input);
+        assert_eq!(doc.children().len(), 1, "입력: {}", input);
+        assert_eq!(doc.children()[0].is_thematic_break(), is_break, "입력: {}", input);
     }
 
     // ============================================================
@@ -261,26 +261,26 @@ mod tests {
     #[case("    > hello", None, "> hello")]               // 4칸 들여쓰기 → Paragraph
     fn test_blockquote(#[case] input: &str, #[case] depth: Option<usize>, #[case] text: &str) {
         let doc = parse(input);
-        assert_eq!(doc.children().len(), 1, "input: {}", input);
+        assert_eq!(doc.children().len(), 1, "입력: {}", input);
 
         match depth {
             Some(d) => {
                 // 중첩 깊이만큼 Blockquote 따라가기
                 let mut current = &doc.children()[0];
                 for i in 0..d {
-                    assert!(current.is_blockquote(), "depth {} should be blockquote, input: {}", i + 1, input);
+                    assert!(current.is_blockquote(), "깊이 {}는 Blockquote여야 함, 입력: {}", i + 1, input);
                     if i < d - 1 {
                         current = &current.children()[0];
                     }
                 }
                 // 마지막 Blockquote 안의 Paragraph 확인
                 let para = &current.children()[0];
-                assert_eq!(para.children()[0].as_text(), text, "input: {}", input);
+                assert_eq!(para.children()[0].as_text(), text, "입력: {}", input);
             }
             None => {
                 // Blockquote가 아닌 경우 → Paragraph
-                assert!(!doc.children()[0].is_blockquote(), "should not be blockquote, input: {}", input);
-                assert_eq!(doc.children()[0].children()[0].as_text(), text, "input: {}", input);
+                assert!(!doc.children()[0].is_blockquote(), "Blockquote가 아니어야 함, 입력: {}", input);
+                assert_eq!(doc.children()[0].children()[0].as_text(), text, "입력: {}", input);
             }
         }
     }
