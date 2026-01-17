@@ -3,6 +3,7 @@
 //! 블록 레벨 요소를 파싱하여 AST를 생성합니다.
 
 mod blockquote;
+mod fenced_code_block;
 mod heading;
 mod paragraph;
 mod thematic_break;

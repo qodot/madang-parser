@@ -3,6 +3,7 @@ pub enum Node {
     Heading { level: u8, children: Vec<Node> },
     Paragraph { children: Vec<Node> },
     Blockquote { children: Vec<Node> },
+    CodeBlock { info: Option<String>, content: String },
     ThematicBreak,
     Text(String),
 }
@@ -16,6 +17,7 @@ impl Node {
             Node::Heading { children, .. } => children,
             Node::Paragraph { children } => children,
             Node::Blockquote { children } => children,
+            Node::CodeBlock { .. } => panic!("CodeBlock has no children"),
             Node::ThematicBreak => panic!("ThematicBreak has no children"),
             Node::Text(_) => panic!("Text node has no children"),
         }
@@ -45,6 +47,27 @@ impl Node {
     /// Blockquote 노드인지 확인
     pub fn is_blockquote(&self) -> bool {
         matches!(self, Node::Blockquote { .. })
+    }
+
+    /// CodeBlock 노드인지 확인
+    pub fn is_code_block(&self) -> bool {
+        matches!(self, Node::CodeBlock { .. })
+    }
+
+    /// CodeBlock의 info string 반환
+    pub fn info(&self) -> Option<&str> {
+        match self {
+            Node::CodeBlock { info, .. } => info.as_deref(),
+            _ => panic!("Expected CodeBlock node"),
+        }
+    }
+
+    /// CodeBlock의 content 반환
+    pub fn content(&self) -> &str {
+        match self {
+            Node::CodeBlock { content, .. } => content,
+            _ => panic!("Expected CodeBlock node"),
+        }
     }
 }
 
