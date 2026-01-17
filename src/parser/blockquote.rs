@@ -79,6 +79,10 @@ mod tests {
     #[case(">line1\n>line2", Some(1), "line1\nline2")]         // 공백 없이
     // 중첩 다중줄
     #[case("> > a\n> > b", Some(2), "a\nb")]                   // 2단계 중첩 다중줄
+    // Lazy continuation (> 없는 줄도 blockquote에 포함)
+    #[case("> line1\nline2", Some(1), "line1\nline2")]
+    #[case("> a\nb\nc", Some(1), "a\nb\nc")]                   // 여러 줄 lazy
+    #[case("> start\n> middle\nend", Some(1), "start\nmiddle\nend")]  // 혼합
     fn test_blockquote(#[case] input: &str, #[case] depth: Option<usize>, #[case] text: &str) {
         let doc = parse(input);
         assert_eq!(doc.children().len(), 1, "입력: {}", input);
