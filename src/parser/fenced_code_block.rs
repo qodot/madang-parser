@@ -14,8 +14,7 @@ fn count_leading_char(s: &str, c: char) -> usize {
 pub fn parse(text: &str, _indent: usize) -> Option<Node> {
     let lines: Vec<&str> = text.lines().collect();
 
-    // 최소 2줄 필요 (여는 펜스 + 닫는 펜스)
-    if lines.len() < 2 {
+    if lines.is_empty() {
         return None;
     }
 
@@ -40,18 +39,30 @@ pub fn parse(text: &str, _indent: usize) -> Option<Node> {
         }
     };
 
-    // 닫는 펜스 확인: 같은 문자로 시작, 같거나 더 긴 길이
-    let last_line = lines[lines.len() - 1];
-    let closing_len = count_leading_char(last_line, fence_char);
-    if closing_len < fence_len {
-        return None;
-    }
-
-    // 중간 내용 추출
-    let content = if lines.len() > 2 {
-        lines[1..lines.len() - 1].join("\n")
+    // 닫는 펜스 찾기: 같은 문자로 시작, 같거나 더 긴 길이
+    let has_closing_fence = if lines.len() >= 2 {
+        let last_line = lines[lines.len() - 1];
+        let closing_len = count_leading_char(last_line, fence_char);
+        closing_len >= fence_len
     } else {
-        String::new()
+        false
+    };
+
+    // 내용 추출
+    let content = if has_closing_fence {
+        // 닫는 펜스가 있으면 마지막 줄 제외
+        if lines.len() > 2 {
+            lines[1..lines.len() - 1].join("\n")
+        } else {
+            String::new()
+        }
+    } else {
+        // 닫는 펜스가 없으면 첫 줄 이후 전체
+        if lines.len() > 1 {
+            lines[1..].join("\n")
+        } else {
+            String::new()
+        }
     };
 
     Some(Node::CodeBlock { info, content })
@@ -77,14 +88,20 @@ mod tests {
     #[case("~~~\ncode\n~~~", Some(("code", None)))]
     #[case("~~~rust\ncode\n~~~", Some(("code", Some("rust"))))]
     #[case("~~\ncode\n~~", None)]  // 틸드 2개는 펜스 아님
-    #[case("~~~\ncode\n```", None)]  // 여닫는 펜스 문자 불일치
-    #[case("```\ncode\n~~~", None)]  // 여닫는 펜스 문자 불일치
     // 펜스 길이 매칭 테스트
     #[case("`````\ncode\n`````", Some(("code", None)))]  // 5개 == 5개
     #[case("```\ncode\n`````", Some(("code", None)))]    // 3개 < 5개 (닫는게 더 김)
-    #[case("`````\ncode\n```", None)]                    // 5개 > 3개 (닫는게 더 짧음)
     #[case("~~~~~\ncode\n~~~~~", Some(("code", None)))]  // 틸드도 동일
-    #[case("~~~~~\ncode\n~~~", None)]                    // 틸드 펜스 길이 불일치
+    // 유효하지 않은 닫는 펜스 → EOF까지 코드 (닫는 펜스도 내용에 포함)
+    #[case("~~~\ncode\n```", Some(("code\n```", None)))]     // 문자 불일치
+    #[case("```\ncode\n~~~", Some(("code\n~~~", None)))]     // 문자 불일치
+    #[case("`````\ncode\n```", Some(("code\n```", None)))]   // 길이 부족
+    #[case("~~~~~\ncode\n~~~", Some(("code\n~~~", None)))]   // 길이 부족
+    // 닫는 펜스 없음 (EOF까지)
+    #[case("```\ncode", Some(("code", None)))]
+    #[case("```rust\ncode", Some(("code", Some("rust"))))]
+    #[case("```\nline1\nline2", Some(("line1\nline2", None)))]
+    #[case("~~~\ncode", Some(("code", None)))]
     fn fenced_code_block(#[case] input: &str, #[case] expected: Option<(&str, Option<&str>)>) {
         let result = parse(input, 0);
 
