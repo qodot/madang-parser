@@ -21,19 +21,35 @@ where
         return None;
     }
 
-    // > 다음 내용 추출 (공백 하나 건너뛰기)
-    let rest = &trimmed[1..];
-    let content = if rest.starts_with(' ') || rest.starts_with('\t') {
-        &rest[1..]
-    } else {
-        rest
-    };
+    // 각 줄에서 > 마커 제거
+    let content = strip_blockquote_markers(trimmed);
 
     // 재귀적으로 내용 파싱
-    let inner = parse_block(content);
+    let inner = parse_block(&content);
     Some(Node::Blockquote {
         children: vec![inner],
     })
+}
+
+/// 각 줄에서 blockquote 마커(>) 제거
+fn strip_blockquote_markers(text: &str) -> String {
+    text.lines()
+        .map(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with('>') {
+                let rest = &trimmed[1..];
+                // > 뒤 공백 하나 제거
+                if rest.starts_with(' ') || rest.starts_with('\t') {
+                    &rest[1..]
+                } else {
+                    rest
+                }
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[cfg(test)]
@@ -57,6 +73,12 @@ mod tests {
     #[case("> > > > 4단계", Some(4), "4단계")]
     // Blockquote가 아닌 케이스
     #[case("    > hello", None, "> hello")]               // 4칸 들여쓰기 → Paragraph
+    // 다중줄 케이스
+    #[case("> line1\n> line2", Some(1), "line1\nline2")]       // 연속 줄
+    #[case("> a\n> b\n> c", Some(1), "a\nb\nc")]               // 3줄
+    #[case(">line1\n>line2", Some(1), "line1\nline2")]         // 공백 없이
+    // 중첩 다중줄
+    #[case("> > a\n> > b", Some(2), "a\nb")]                   // 2단계 중첩 다중줄
     fn test_blockquote(#[case] input: &str, #[case] depth: Option<usize>, #[case] text: &str) {
         let doc = parse(input);
         assert_eq!(doc.children().len(), 1, "입력: {}", input);
