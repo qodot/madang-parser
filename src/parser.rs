@@ -55,51 +55,73 @@ fn strip_closing_hashes(s: &str) -> &str {
     }
 }
 
+/// 단일 블록 파싱
+fn parse_block(block: &str) -> Node {
+    // 앞 들여쓰기 계산 (공백=1, 탭=4)
+    let indent = block.chars()
+        .take_while(|c| *c == ' ' || *c == '\t')
+        .map(|c| if c == '\t' { 4 } else { 1 })
+        .sum::<usize>();
+    let trimmed = block.trim();
+
+    // Thematic Break 검사: 들여쓰기 3칸 이하
+    if indent <= 3 && is_thematic_break(trimmed) {
+        return Node::ThematicBreak;
+    }
+
+    // Blockquote 검사: >로 시작하고, 들여쓰기가 3칸 이하
+    if trimmed.starts_with('>') && indent <= 3 {
+        // > 다음 내용 추출 (공백 하나 건너뛰기)
+        let rest = &trimmed[1..];
+        let content = if rest.starts_with(' ') || rest.starts_with('\t') {
+            &rest[1..]
+        } else {
+            rest
+        };
+        // 재귀적으로 내용 파싱
+        let inner = parse_block(content);
+        return Node::Blockquote {
+            children: vec![inner],
+        };
+    }
+
+    // Heading 검사: #로 시작하고, 들여쓰기가 3칸 이하
+    if trimmed.starts_with('#') && indent <= 3 {
+        // # 개수 세기
+        let level = trimmed.chars().take_while(|c| *c == '#').count();
+
+        // 레벨 1~6만 유효, 7개 이상은 Paragraph
+        if level >= 1 && level <= 6 {
+            let rest = &trimmed[level..];
+
+            // # 뒤에 공백/탭이 있거나 빈 제목이어야 Heading
+            if rest.is_empty() || rest.starts_with(' ') || rest.starts_with('\t') {
+                let content = rest.trim();
+                // 닫는 # 제거
+                let content = strip_closing_hashes(content);
+                return Node::Heading {
+                    level: level as u8,
+                    children: vec![Node::Text(content.to_string())],
+                };
+            }
+        }
+    }
+
+    // 기본: Paragraph
+    Node::Paragraph {
+        children: vec![Node::Text(trimmed.to_string())],
+    }
+}
+
 pub fn parse(input: &str) -> Node {
     if input.is_empty() {
         return Node::Document { children: vec![] };
     }
 
-    let children = input.split("\n\n").filter(|s| !s.is_empty()).map(|block| {
-        // 앞 들여쓰기 계산 (공백=1, 탭=4, 4칸 이상이면 들여쓰기 코드 블록)
-        let indent = block.chars()
-            .take_while(|c| *c == ' ' || *c == '\t')
-            .map(|c| if c == '\t' { 4 } else { 1 })
-            .sum::<usize>();
-        let block = block.trim();
-
-        // Thematic Break 검사: 들여쓰기 3칸 이하
-        if indent <= 3 && is_thematic_break(block) {
-            return Node::ThematicBreak;
-        }
-
-        // Heading 검사: #로 시작하고, 들여쓰기가 3칸 이하
-        if block.starts_with('#') && indent <= 3 {
-            // # 개수 세기
-            let level = block.chars().take_while(|c| *c == '#').count();
-
-            // 레벨 1~6만 유효, 7개 이상은 Paragraph
-            if level >= 1 && level <= 6 {
-                let rest = &block[level..];
-
-                // # 뒤에 공백/탭이 있거나 빈 제목이어야 Heading
-                if rest.is_empty() || rest.starts_with(' ') || rest.starts_with('\t') {
-                    let content = rest.trim();
-                    // 닫는 # 제거
-                    let content = strip_closing_hashes(content);
-                    return Node::Heading {
-                        level: level as u8,
-                        children: vec![Node::Text(content.to_string())],
-                    };
-                }
-            }
-        }
-
-        // 기본: Paragraph
-        Node::Paragraph {
-            children: vec![Node::Text(block.to_string())],
-        }
-    }).collect();
+    let children = input.split("\n\n")
+        .filter(|s| !s.is_empty())
+        .map(parse_block)
+        .collect();
 
     Node::Document { children }
 }
@@ -217,5 +239,49 @@ mod tests {
         let doc = parse(input);
         assert_eq!(doc.children().len(), 1, "input: {}", input);
         assert_eq!(doc.children()[0].is_thematic_break(), is_break, "input: {}", input);
+    }
+
+    // ============================================================
+    // Blockquote 테스트 (depth = None이면 Paragraph, Some(n)이면 n단계 중첩)
+    // ============================================================
+    #[rstest]
+    // 단순 케이스 (depth = 1)
+    #[case("> hello", Some(1), "hello")]
+    #[case(">hello", Some(1), "hello")]                   // 공백 없어도 OK
+    #[case(">  hello", Some(1), "hello")]                 // 여러 공백
+    #[case(" > hello", Some(1), "hello")]                 // 선행 공백 1칸
+    #[case("  > hello", Some(1), "hello")]                // 선행 공백 2칸
+    #[case("   > hello", Some(1), "hello")]               // 선행 공백 3칸
+    #[case("> 안녕하세요", Some(1), "안녕하세요")]        // 유니코드
+    // 중첩 케이스
+    #[case("> > nested", Some(2), "nested")]
+    #[case("> > > deep", Some(3), "deep")]
+    #[case("> > > > 4단계", Some(4), "4단계")]
+    // Blockquote가 아닌 케이스
+    #[case("    > hello", None, "> hello")]               // 4칸 들여쓰기 → Paragraph
+    fn test_blockquote(#[case] input: &str, #[case] depth: Option<usize>, #[case] text: &str) {
+        let doc = parse(input);
+        assert_eq!(doc.children().len(), 1, "input: {}", input);
+
+        match depth {
+            Some(d) => {
+                // 중첩 깊이만큼 Blockquote 따라가기
+                let mut current = &doc.children()[0];
+                for i in 0..d {
+                    assert!(current.is_blockquote(), "depth {} should be blockquote, input: {}", i + 1, input);
+                    if i < d - 1 {
+                        current = &current.children()[0];
+                    }
+                }
+                // 마지막 Blockquote 안의 Paragraph 확인
+                let para = &current.children()[0];
+                assert_eq!(para.children()[0].as_text(), text, "input: {}", input);
+            }
+            None => {
+                // Blockquote가 아닌 경우 → Paragraph
+                assert!(!doc.children()[0].is_blockquote(), "should not be blockquote, input: {}", input);
+                assert_eq!(doc.children()[0].children()[0].as_text(), text, "input: {}", input);
+            }
+        }
     }
 }

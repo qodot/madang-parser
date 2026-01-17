@@ -21,6 +21,14 @@
    - 테스트 먼저 작성
    - 실패 확인
    - 최소한의 구현으로 테스트 통과
+   - **항상 rstest를 사용한 parametrized 테스트로 작성**
+     ```rust
+     #[rstest]
+     #[case("input1", expected1)]
+     #[case("input2", expected2)]
+     fn test_something(#[case] input: &str, #[case] expected: Type) { ... }
+     ```
+   - 개별 `#[test]` 함수 대신 `#[rstest]` + `#[case]`로 케이스 통합
 6. **새 스펙 구현 전 명세 확인**: 새로운 마크다운 요소를 구현하기 전에
    - CommonMark 명세(https://spec.commonmark.org/)에서 해당 요소 정의 확인
    - 엣지 케이스와 공식 규칙을 먼저 파악
