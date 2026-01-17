@@ -129,4 +129,26 @@ mod tests {
             assert_eq!(para.children()[0].as_text(), *text, "단락 {}, 입력: {}", i, input);
         }
     }
+
+    // Blockquote 내 다른 블록 요소 테스트
+    #[test]
+    fn test_heading_inside_blockquote() {
+        let doc = parse("> # Title");
+        let blockquote = &doc.children()[0];
+        assert!(blockquote.is_blockquote());
+
+        let heading = &blockquote.children()[0];
+        assert_eq!(heading.level(), 1);
+        assert_eq!(heading.children()[0].as_text(), "Title");
+    }
+
+    #[test]
+    fn test_thematic_break_inside_blockquote() {
+        let doc = parse("> ---");
+        let blockquote = &doc.children()[0];
+        assert!(blockquote.is_blockquote());
+
+        let hr = &blockquote.children()[0];
+        assert!(hr.is_thematic_break());
+    }
 }
