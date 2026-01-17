@@ -14,7 +14,7 @@ use crate::node::Node;
 use fenced_code_block::{
     is_end as is_end_fenced_code_block, try_start as try_start_fenced_code_block,
 };
-use helpers::remove_indent;
+use helpers::{calculate_indent, remove_indent};
 
 /// 파싱 중인 컨텍스트 (상태 기계의 상태)
 enum ParsingContext {
@@ -335,15 +335,6 @@ fn parse_block_simple(block: &str) -> Node {
     thematic_break::parse(trimmed, indent)
         .or_else(|| heading::parse(trimmed, indent))
         .unwrap_or_else(|| paragraph::parse(trimmed))
-}
-
-/// 들여쓰기 계산 (공백=1, 탭=4)
-fn calculate_indent(block: &str) -> usize {
-    block
-        .chars()
-        .take_while(|c| *c == ' ' || *c == '\t')
-        .map(|c| if c == '\t' { 4 } else { 1 })
-        .sum()
 }
 
 #[cfg(test)]

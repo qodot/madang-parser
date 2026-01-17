@@ -5,6 +5,14 @@ pub(crate) fn count_leading_char(s: &str, c: char) -> usize {
     s.chars().take_while(|&ch| ch == c).count()
 }
 
+/// 들여쓰기 계산 (공백=1, 탭=4)
+pub(crate) fn calculate_indent(s: &str) -> usize {
+    s.chars()
+        .take_while(|c| *c == ' ' || *c == '\t')
+        .map(|c| if c == '\t' { 4 } else { 1 })
+        .sum()
+}
+
 /// 문자열에서 최대 n칸의 공백 제거
 pub(crate) fn remove_indent(s: &str, n: usize) -> &str {
     let spaces = count_leading_char(s, ' ');
@@ -73,5 +81,29 @@ mod tests {
     #[case("  \tcode", 3, "\tcode")]   // 공백 2개만 있으므로 2개만 제거
     fn test_remove_indent(#[case] input: &str, #[case] n: usize, #[case] expected: &str) {
         assert_eq!(remove_indent(input, n), expected);
+    }
+
+    #[rstest]
+    // 공백만
+    #[case("", 0)]
+    #[case(" ", 1)]
+    #[case("  ", 2)]
+    #[case("   ", 3)]
+    #[case("    ", 4)]
+    // 탭 (1탭 = 4칸)
+    #[case("\t", 4)]
+    #[case("\t\t", 8)]
+    // 공백 + 탭 혼합
+    #[case(" \t", 5)]           // 1 + 4
+    #[case("  \t", 6)]          // 2 + 4
+    #[case("\t ", 5)]           // 4 + 1
+    // 텍스트 포함
+    #[case("code", 0)]
+    #[case(" code", 1)]
+    #[case("  code", 2)]
+    #[case("\tcode", 4)]
+    #[case("  \tcode", 6)]      // 2 + 4
+    fn test_calculate_indent(#[case] input: &str, #[case] expected: usize) {
+        assert_eq!(calculate_indent(input), expected);
     }
 }
