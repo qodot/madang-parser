@@ -4,6 +4,21 @@
 
 use crate::node::Node;
 
+/// Thematic Break 파싱 시도
+/// 성공하면 Some(Node::ThematicBreak), 실패하면 None
+pub fn parse(trimmed: &str, indent: usize) -> Option<Node> {
+    // 들여쓰기 3칸 초과면 Thematic Break 아님
+    if indent > 3 {
+        return None;
+    }
+
+    if is_thematic_break(trimmed) {
+        Some(Node::ThematicBreak)
+    } else {
+        None
+    }
+}
+
 /// Thematic Break 검사
 /// 규칙: *, -, _ 중 하나가 3개 이상, 공백/탭만 사이에 허용
 fn is_thematic_break(s: &str) -> bool {
@@ -30,21 +45,6 @@ fn is_thematic_break(s: &str) -> bool {
 
     // 마커가 3개 이상이어야 함
     marker_count >= 3
-}
-
-/// Thematic Break 파싱 시도
-/// 성공하면 Some(Node::ThematicBreak), 실패하면 None
-pub fn parse(trimmed: &str, indent: usize) -> Option<Node> {
-    // 들여쓰기 3칸 초과면 Thematic Break 아님
-    if indent > 3 {
-        return None;
-    }
-
-    if is_thematic_break(trimmed) {
-        Some(Node::ThematicBreak)
-    } else {
-        None
-    }
 }
 
 #[cfg(test)]

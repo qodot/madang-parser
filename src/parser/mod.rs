@@ -9,13 +9,19 @@ mod thematic_break;
 
 use crate::node::Node;
 
-/// 들여쓰기 계산 (공백=1, 탭=4)
-fn calculate_indent(block: &str) -> usize {
-    block
-        .chars()
-        .take_while(|c| *c == ' ' || *c == '\t')
-        .map(|c| if c == '\t' { 4 } else { 1 })
-        .sum()
+/// 문서 전체 파싱
+pub fn parse(input: &str) -> Node {
+    if input.is_empty() {
+        return Node::Document { children: vec![] };
+    }
+
+    let children = input
+        .split("\n\n")
+        .filter(|s| !s.is_empty())
+        .map(parse_block)
+        .collect();
+
+    Node::Document { children }
 }
 
 /// 단일 블록 파싱
@@ -30,19 +36,13 @@ fn parse_block(block: &str) -> Node {
         .unwrap_or_else(|| paragraph::parse(trimmed))
 }
 
-/// 문서 전체 파싱
-pub fn parse(input: &str) -> Node {
-    if input.is_empty() {
-        return Node::Document { children: vec![] };
-    }
-
-    let children = input
-        .split("\n\n")
-        .filter(|s| !s.is_empty())
-        .map(parse_block)
-        .collect();
-
-    Node::Document { children }
+/// 들여쓰기 계산 (공백=1, 탭=4)
+fn calculate_indent(block: &str) -> usize {
+    block
+        .chars()
+        .take_while(|c| *c == ' ' || *c == '\t')
+        .map(|c| if c == '\t' { 4 } else { 1 })
+        .sum()
 }
 
 #[cfg(test)]

@@ -4,33 +4,6 @@
 
 use crate::node::Node;
 
-/// 닫는 # 시퀀스 제거
-/// 규칙: 끝에 #들이 있고, 그 앞에 공백이 있으면 제거
-fn strip_closing_hashes(s: &str) -> &str {
-    // 1. 끝에서 # 제거
-    let without_hashes = s.trim_end_matches('#');
-
-    // 2. #이 없었으면 원본 반환
-    if without_hashes.len() == s.len() {
-        return s;
-    }
-
-    // 3. 전체가 #이었으면 (rest가 " ###" 같은 경우)
-    //    앞에 공백이 있었다는 것이므로 닫는 시퀀스
-    if without_hashes.is_empty() {
-        return "";
-    }
-
-    // 4. # 앞에 공백/탭이 있는지 확인
-    if without_hashes.ends_with(' ') || without_hashes.ends_with('\t') {
-        // 공백도 함께 제거
-        without_hashes.trim_end()
-    } else {
-        // 공백 없으면 원본 반환 (# 은 텍스트의 일부)
-        s
-    }
-}
-
 /// ATX Heading 파싱 시도
 /// 성공하면 Some(Node::Heading), 실패하면 None
 pub fn parse(trimmed: &str, indent: usize) -> Option<Node> {
@@ -64,6 +37,33 @@ pub fn parse(trimmed: &str, indent: usize) -> Option<Node> {
         })
     } else {
         None
+    }
+}
+
+/// 닫는 # 시퀀스 제거
+/// 규칙: 끝에 #들이 있고, 그 앞에 공백이 있으면 제거
+fn strip_closing_hashes(s: &str) -> &str {
+    // 1. 끝에서 # 제거
+    let without_hashes = s.trim_end_matches('#');
+
+    // 2. #이 없었으면 원본 반환
+    if without_hashes.len() == s.len() {
+        return s;
+    }
+
+    // 3. 전체가 #이었으면 (rest가 " ###" 같은 경우)
+    //    앞에 공백이 있었다는 것이므로 닫는 시퀀스
+    if without_hashes.is_empty() {
+        return "";
+    }
+
+    // 4. # 앞에 공백/탭이 있는지 확인
+    if without_hashes.ends_with(' ') || without_hashes.ends_with('\t') {
+        // 공백도 함께 제거
+        without_hashes.trim_end()
+    } else {
+        // 공백 없으면 원본 반환 (# 은 텍스트의 일부)
+        s
     }
 }
 
