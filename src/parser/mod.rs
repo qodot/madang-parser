@@ -8,6 +8,7 @@ mod context;
 mod fenced_code_block;
 mod heading;
 mod helpers;
+mod list_item;
 mod paragraph;
 mod thematic_break;
 

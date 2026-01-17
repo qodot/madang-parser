@@ -2,6 +2,10 @@
 //!
 //! 시작 정보(Start)와 파싱 상태(ParsingContext)를 분리하여 관리합니다.
 
+// =============================================================================
+// Fenced Code Block
+// =============================================================================
+
 /// Fenced Code Block 시작 정보
 /// try_start에서 반환되며, 종료 조건 판단에 사용
 #[derive(Debug, Clone)]
@@ -15,6 +19,40 @@ pub struct FencedCodeBlockStart {
     /// 여는 펜스의 들여쓰기
     pub indent: usize,
 }
+
+// =============================================================================
+// List
+// =============================================================================
+
+/// 리스트 마커 타입
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListMarker {
+    /// Bullet 마커: '-', '+', '*'
+    Bullet(char),
+    /// Ordered 마커: 숫자 + '.' 또는 ')'
+    Ordered {
+        /// 시작 숫자
+        start: usize,
+        /// 구분자 ('.' 또는 ')')
+        delimiter: char,
+    },
+}
+
+/// List Item 시작 정보
+/// try_start에서 반환되며, 같은 리스트 소속 여부 판단에 사용
+#[derive(Debug, Clone)]
+pub struct ListItemStart {
+    /// 마커 타입
+    pub marker: ListMarker,
+    /// 마커 앞 들여쓰기 (0-3칸)
+    pub indent: usize,
+    /// 내용 시작 위치 (마커 + 공백 이후)
+    pub content_indent: usize,
+}
+
+// =============================================================================
+// Parsing Context
+// =============================================================================
 
 /// 파싱 중인 컨텍스트 (상태 기계의 상태)
 pub enum ParsingContext {
