@@ -12,7 +12,7 @@ mod list_item;
 mod paragraph;
 mod thematic_break;
 
-use crate::node::{ListType, Node};
+use crate::node::Node;
 use context::{FencedCodeBlockStart, ListItemStart, ListMarker, ParsingContext};
 use fenced_code_block::{
     is_end as is_end_fenced_code_block, try_start as try_start_fenced_code_block,
@@ -205,7 +205,9 @@ fn process_line_in_list(
 ) -> ParserState {
     // 빈 줄이면 List 종료
     if line.trim().is_empty() {
-        let list_node = build_list_node(&first_item_start, items, current_item_lines, tight);
+        let (list_type, start) = first_item_start.marker.to_list_type();
+        let all_items = push_item(items, current_item_lines);
+        let list_node = Node::build_list(list_type, start, tight, all_items, paragraph::parse);
         let children = push_node(children, list_node);
         return (children, ParsingContext::None);
     }
@@ -227,7 +229,9 @@ fn process_line_in_list(
     }
 
     // 다른 블록이면 List 종료 후 해당 블록 처리
-    let list_node = build_list_node(&first_item_start, items, current_item_lines, tight);
+    let (list_type, start) = first_item_start.marker.to_list_type();
+    let all_items = push_item(items, current_item_lines);
+    let list_node = Node::build_list(list_type, start, tight, all_items, paragraph::parse);
     let children = push_node(children, list_node);
     process_line_in_none(line, children)
 }
@@ -243,46 +247,6 @@ fn is_same_list_type(a: &ListMarker, b: &ListMarker) -> bool {
     }
 }
 
-/// List Node 생성
-fn build_list_node(
-    first_item_start: &ListItemStart,
-    items: Vec<Vec<String>>,
-    current_item_lines: Vec<String>,
-    tight: bool,
-) -> Node {
-    // 현재 아이템 포함하여 모든 아이템 수집
-    let all_items = push_item(items, current_item_lines);
-
-    // 각 아이템을 ListItem 노드로 변환
-    let list_items: Vec<Node> = all_items
-        .into_iter()
-        .map(|item_lines| {
-            let text = item_lines.join("\n");
-            let para = paragraph::parse(&text);
-            Node::ListItem {
-                children: vec![para],
-            }
-        })
-        .collect();
-
-    // 리스트 타입 결정
-    let (list_type, start) = match &first_item_start.marker {
-        ListMarker::Bullet(_) => (ListType::Bullet, 1),
-        ListMarker::Ordered { start, delimiter } => (
-            ListType::Ordered {
-                delimiter: *delimiter,
-            },
-            *start,
-        ),
-    };
-
-    Node::List {
-        list_type,
-        start,
-        tight,
-        children: list_items,
-    }
-}
 
 /// 아이템 리스트에 아이템 추가
 fn push_item(mut items: Vec<Vec<String>>, item: Vec<String>) -> Vec<Vec<String>> {
@@ -381,7 +345,9 @@ fn finalize_context(context: ParsingContext, children: Vec<Node>) -> Vec<Node> {
             current_item_lines,
             tight,
         } => {
-            let list_node = build_list_node(&first_item_start, items, current_item_lines, tight);
+            let (list_type, start) = first_item_start.marker.to_list_type();
+            let all_items = push_item(items, current_item_lines);
+            let list_node = Node::build_list(list_type, start, tight, all_items, paragraph::parse);
             push_node(children, list_node)
         }
     }

@@ -35,6 +35,37 @@ pub enum Node {
 }
 
 impl Node {
+    /// List 노드 생성
+    /// items: 각 아이템의 줄들, parse_item: 아이템 내용을 Node로 변환하는 함수
+    pub fn build_list<F>(
+        list_type: ListType,
+        start: usize,
+        tight: bool,
+        items: Vec<Vec<String>>,
+        parse_item: F,
+    ) -> Self
+    where
+        F: Fn(&str) -> Node,
+    {
+        let children: Vec<Node> = items
+            .into_iter()
+            .map(|item_lines| {
+                let text = item_lines.join("\n");
+                let parsed = parse_item(&text);
+                Node::ListItem {
+                    children: vec![parsed],
+                }
+            })
+            .collect();
+
+        Node::List {
+            list_type,
+            start,
+            tight,
+            children,
+        }
+    }
+
     /// Container 노드의 children을 반환
     /// Text 같은 Leaf 노드에서 호출하면 panic
     pub fn children(&self) -> &Vec<Node> {

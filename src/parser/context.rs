@@ -2,6 +2,8 @@
 //!
 //! 시작 정보(Start)와 파싱 상태(ParsingContext)를 분리하여 관리합니다.
 
+use crate::node::ListType;
+
 // =============================================================================
 // Fenced Code Block
 // =============================================================================
@@ -36,6 +38,21 @@ pub enum ListMarker {
         /// 구분자 ('.' 또는 ')')
         delimiter: char,
     },
+}
+
+impl ListMarker {
+    /// ListType과 시작 번호로 변환
+    pub fn to_list_type(&self) -> (ListType, usize) {
+        match self {
+            ListMarker::Bullet(_) => (ListType::Bullet, 1),
+            ListMarker::Ordered { start, delimiter } => (
+                ListType::Ordered {
+                    delimiter: *delimiter,
+                },
+                *start,
+            ),
+        }
+    }
 }
 
 /// List Item 시작 정보
