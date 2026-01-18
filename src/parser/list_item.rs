@@ -166,10 +166,12 @@ mod tests {
     use super::super::context::{ListContinueReason, ListEndReason};
     use rstest::rstest;
 
+    // === CommonMark List Item 예제 테스트 ===
+
     // === try_start (Bullet) 테스트 ===
     // expected: Ok((marker_char, indent, content_indent)) 또는 Err(reason)
     #[rstest]
-    // 기본 Bullet 마커
+    // === 기본 Bullet 마커 ===
     #[case("- item", Ok(('-', 0, 2)))]
     #[case("+ item", Ok(('+', 0, 2)))]
     #[case("* item", Ok(('*', 0, 2)))]
@@ -186,8 +188,9 @@ mod tests {
     #[case("-", Ok(('-', 0, 1)))]
     #[case("+", Ok(('+', 0, 1)))]
     #[case("*", Ok(('*', 0, 1)))]
-    // Bullet 마커가 아닌 경우
+    // === Bullet 마커가 아닌 경우 ===
     #[case("    - item", Err(ListItemNotStartReason::CodeBlockIndented))]  // 4칸 들여쓰기
+    // === Example 261: 마커 뒤 공백 없으면 리스트 아님 ===
     #[case("-item", Err(ListItemNotStartReason::NotListMarker))]           // 마커 뒤 공백 없음
     #[case("--item", Err(ListItemNotStartReason::NotListMarker))]          // 두 번째 문자도 마커
     #[case("text", Err(ListItemNotStartReason::NotListMarker))]            // 일반 텍스트
@@ -236,8 +239,9 @@ mod tests {
     // 빈 아이템
     #[case("1.", Ok((1, '.', 0, 2)))]
     #[case("1)", Ok((1, ')', 0, 2)))]
-    // Ordered 마커가 아닌 경우
+    // === Ordered 마커가 아닌 경우 ===
     #[case("    1. item", Err(ListItemNotStartReason::CodeBlockIndented))]  // 4칸 들여쓰기
+    // === Example 261: 마커 뒤 공백 없으면 리스트 아님 ===
     #[case("1.item", Err(ListItemNotStartReason::NotListMarker))]           // 마커 뒤 공백 없음
     #[case("1234567890. item", Err(ListItemNotStartReason::NotListMarker))] // 10자리 → 너무 김
     #[case("0. item", Err(ListItemNotStartReason::NotListMarker))]          // 0으로 시작

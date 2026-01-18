@@ -8,9 +8,11 @@ mod tests {
     use crate::parser::parse;
     use rstest::rstest;
 
+    // === CommonMark List 예제 테스트 ===
     // === Bullet List 테스트 ===
 
     /// 단일 아이템 Bullet List
+    /// CommonMark: 마커(-,+,*) 뒤 공백 필수
     #[rstest]
     #[case("- item", 1, "item")]
     #[case("+ item", 1, "item")]
@@ -190,7 +192,18 @@ mod tests {
         assert_eq!(list2.children().len(), second_list_texts.len());
     }
 
-    // === 다중 라인 아이템 테스트 ===
+    // === Example 261: 마커 뒤 공백 없으면 리스트 아님 ===
+    #[rstest]
+    #[case("-one")]      // Bullet 마커 뒤 공백 없음
+    #[case("2.two")]     // Ordered 마커 뒤 공백 없음
+    fn test_example_261_not_list_marker(#[case] input: &str) {
+        let doc = parse(input);
+        assert_eq!(doc.children().len(), 1);
+        // Paragraph여야 함 (List가 아님)
+        assert!(!doc.children()[0].is_list(), "List가 아니어야 함: {:?}", input);
+    }
+
+    // === 다중 라인 아이템 테스트 (Example 254 등) ===
 
     /// 다중 라인 아이템 (continuation line)
     /// content_indent 이상 들여쓰기된 줄은 같은 아이템에 속함
