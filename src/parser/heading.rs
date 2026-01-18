@@ -75,38 +75,53 @@ mod tests {
 
     // level = None이면 Paragraph, Some(n)이면 Heading
     #[rstest]
-    // 기본 heading
-    #[case("# heading", Some(1), "heading")]
-    #[case("## heading", Some(2), "heading")]
-    #[case("###### h6 title", Some(6), "h6 title")]
-    // 빈 heading
-    #[case("#", Some(1), "")]
-    #[case("# ", Some(1), "")]
-    #[case("### ###", Some(3), "")]                       // 닫는 #만
-    // 닫는 # 시퀀스
-    #[case("## foo ##", Some(2), "foo")]
-    #[case("# foo ##########", Some(1), "foo")]           // 개수 불일치 OK
-    #[case("### foo ###   ", Some(3), "foo")]             // 뒤 공백
-    #[case("# foo#", Some(1), "foo#")]                    // 앞 공백 없음 → 텍스트
-    #[case("### foo ### b", Some(3), "foo ### b")]        // 뒤에 문자 → 텍스트
-    #[case("## a ## b", Some(2), "a ## b")]               // 중간 # → 텍스트
-    // 탭 처리
-    #[case("#\tfoo", Some(1), "foo")]                     // # 뒤 탭
-    #[case("# foo\t#", Some(1), "foo")]                   // 닫는 # 앞 탭
-    // 선행 공백 (0~3칸 허용)
-    #[case(" # foo", Some(1), "foo")]
+    // === CommonMark Example 62: 모든 레벨 h1-h6 ===
+    #[case("# foo", Some(1), "foo")]
+    #[case("## foo", Some(2), "foo")]
+    #[case("### foo", Some(3), "foo")]
+    #[case("#### foo", Some(4), "foo")]
+    #[case("##### foo", Some(5), "foo")]
+    #[case("###### foo", Some(6), "foo")]
+    // === CommonMark Example 63: 7개 이상 # ===
+    #[case("####### foo", None, "####### foo")]
+    // === CommonMark Example 64: # 뒤 공백 없음 ===
+    #[case("#5 bolt", None, "#5 bolt")]
+    #[case("#hashtag", None, "#hashtag")]
+    // === CommonMark Example 67: # 뒤 여러 공백 ===
+    #[case("#                  foo", Some(1), "foo")]
+    // === CommonMark Example 68: 1-3칸 들여쓰기 허용 ===
+    #[case(" ### foo", Some(3), "foo")]
+    #[case("  ## foo", Some(2), "foo")]
     #[case("   # foo", Some(1), "foo")]
-    // # 뒤 여러 공백
+    // === CommonMark Example 71: 닫는 # 시퀀스 ===
+    #[case("## foo ##", Some(2), "foo")]
+    #[case("  ###   bar    ###", Some(3), "bar")]
+    // === CommonMark Example 72: 많은 닫는 # ===
+    #[case("# foo ##################################", Some(1), "foo")]
+    #[case("##### foo ##", Some(5), "foo")]
+    // === CommonMark Example 73: 닫는 # 뒤 공백 ===
+    #[case("### foo ###     ", Some(3), "foo")]
+    // === CommonMark Example 74: 닫는 # 뒤 텍스트 ===
+    #[case("### foo ### b", Some(3), "foo ### b")]
+    // === CommonMark Example 75: # 앞 공백 없음 ===
+    #[case("# foo#", Some(1), "foo#")]
+    // === CommonMark Example 79: 빈 heading ===
+    #[case("##", Some(2), "")]
+    #[case("#", Some(1), "")]
+    #[case("### ###", Some(3), "")]
+    // === 추가 케이스 ===
+    #[case("# heading", Some(1), "heading")]
+    #[case("###### h6 title", Some(6), "h6 title")]
+    #[case("# ", Some(1), "")]
+    #[case("## a ## b", Some(2), "a ## b")]
+    #[case("#\tfoo", Some(1), "foo")]
+    #[case("# foo\t#", Some(1), "foo")]
+    #[case(" # foo", Some(1), "foo")]
     #[case("#    foo", Some(1), "foo")]
-    // 내부 공백 유지
     #[case("# foo   bar", Some(1), "foo   bar")]
-    // 유니코드
     #[case("# 안녕하세요", Some(1), "안녕하세요")]
     #[case("## 🎉 축하합니다", Some(2), "🎉 축하합니다")]
-    // Heading이 아닌 케이스 (Paragraph로 처리)
-    #[case("#no_space", None, "#no_space")]               // # 뒤 공백 없음
-    #[case("####### not heading", None, "####### not heading")]  // 7개 이상 #
-    // 4칸 이상 들여쓰기 → Indented Code Block (별도 테스트)
+    #[case("#no_space", None, "#no_space")]
     fn test_heading(#[case] input: &str, #[case] level: Option<u8>, #[case] text: &str) {
         let doc = parse(input);
         assert_eq!(doc.children().len(), 1, "입력: {}", input);
