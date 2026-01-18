@@ -54,31 +54,49 @@ mod tests {
 
     // is_break = true면 ThematicBreak, false면 Paragraph
     #[rstest]
-    // 기본 케이스 (3개)
+    // === CommonMark Example 43: 기본 케이스 ===
     #[case("***", true)]
     #[case("---", true)]
     #[case("___", true)]
-    // 3개 이상
-    #[case("*****", true)]
-    #[case("----------", true)]
-    // 문자 사이 공백
-    #[case("* * *", true)]
-    #[case("- - -", true)]
-    #[case("_  _  _", true)]                         // 여러 공백
-    // 선행 공백 (0~3칸)
-    #[case(" ***", true)]
-    #[case("  ---", true)]
-    #[case("   ___", true)]
-    // 끝 공백
-    #[case("***   ", true)]
-    // Thematic Break가 아닌 케이스
-    #[case("**", false)]                             // 2개 부족
+    // === CommonMark Example 44-45: 유효하지 않은 마커 문자 ===
+    #[case("+++", false)]
+    #[case("===", false)]
+    // === CommonMark Example 46: 2개는 부족 ===
+    #[case("**", false)]
     #[case("--", false)]
     #[case("__", false)]
-    #[case("    ***", false)]                        // 4칸 들여쓰기
-    #[case("*-*", false)]                            // 혼합 문자
-    #[case("***a", false)]                           // 다른 문자 포함
-    #[case("a]***", false)]                          // 앞에 다른 문자
+    // === CommonMark Example 47: 1-3칸 들여쓰기 허용 ===
+    #[case(" ***", true)]
+    #[case("  ***", true)]
+    #[case("   ***", true)]
+    // === CommonMark Example 48: 4칸 들여쓰기는 코드 블록 ===
+    #[case("    ***", false)]
+    // === CommonMark Example 50: 많은 문자 ===
+    #[case("_____________________________________", true)]
+    // === CommonMark Example 51: 공백 사이 ===
+    #[case(" - - -", true)]
+    // === CommonMark Example 52: 복잡한 공백 패턴 ===
+    #[case(" **  * ** * ** * **", true)]
+    // === CommonMark Example 53: 많은 공백 ===
+    #[case("-     -      -      -", true)]
+    // === CommonMark Example 54: 끝 공백 ===
+    #[case("- - - -    ", true)]
+    // === CommonMark Example 55: 다른 문자 포함 시 무효 ===
+    #[case("_ _ _ _ a", false)]
+    #[case("a------", false)]
+    #[case("---a---", false)]
+    // === CommonMark Example 56: 혼합 문자는 무효 ===
+    #[case("*-*", false)]
+    // === 추가 케이스 ===
+    #[case("*****", true)]
+    #[case("----------", true)]
+    #[case("* * *", true)]
+    #[case("- - -", true)]
+    #[case("_  _  _", true)]
+    #[case("  ---", true)]
+    #[case("   ___", true)]
+    #[case("***   ", true)]
+    #[case("***a", false)]
     fn test_thematic_break(#[case] input: &str, #[case] is_break: bool) {
         let doc = parse(input);
         assert_eq!(doc.children().len(), 1, "입력: {}", input);
