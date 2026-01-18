@@ -98,6 +98,11 @@ impl Node {
         }
     }
 
+    /// Heading 노드인지 확인
+    pub fn is_heading(&self) -> bool {
+        matches!(self, Node::Heading { .. })
+    }
+
     /// ThematicBreak 노드인지 확인
     pub fn is_thematic_break(&self) -> bool {
         matches!(self, Node::ThematicBreak)

@@ -7,6 +7,7 @@ mod blockquote;
 mod context;
 mod fenced_code_block;
 mod heading;
+mod heading_setext;
 mod helpers;
 mod list;
 mod list_item;
@@ -15,12 +16,13 @@ mod thematic_break;
 
 use crate::node::Node;
 use context::{
-    FencedCodeBlockStart, FencedCodeBlockStartReason, ListContinueReason, ListEndReason,
-    ListItemStart, ListItemStartReason, ParsingContext,
+    FencedCodeBlockStart, FencedCodeBlockStartReason, HeadingSetextStartReason,
+    ListContinueReason, ListEndReason, ListItemStart, ListItemStartReason, ParsingContext,
 };
 use fenced_code_block::{
     try_end as try_end_fenced_code_block, try_start as try_start_fenced_code_block,
 };
+use heading_setext::try_start as try_start_heading_setext;
 use helpers::{calculate_indent, remove_indent};
 
 /// 파서 상태: (완성된 노드들, 현재 컨텍스트)
@@ -167,9 +169,22 @@ fn process_line_in_paragraph(line: &str, lines: Vec<String>, children: Vec<Node>
         return (children, context);
     }
 
-    // Thematic Break이면 Paragraph 종료
     let trimmed = line.trim();
     let indent = calculate_indent(line);
+
+    // Setext Heading 밑줄이면 Paragraph를 Heading으로 변환
+    // 중요: Thematic Break보다 먼저 확인해야 함 (---가 Setext 밑줄로 해석됨)
+    if let Ok(HeadingSetextStartReason::Started(start)) = try_start_heading_setext(trimmed, indent) {
+        let text = lines.join("\n");
+        let node = Node::Heading {
+            level: start.level.to_level(),
+            children: vec![Node::Text(text)],
+        };
+        let children = push_node(children, node);
+        return (children, ParsingContext::None);
+    }
+
+    // Thematic Break이면 Paragraph 종료
     if let Some(node) = thematic_break::parse(trimmed, indent) {
         let text = lines.join("\n");
         let children = push_node(children, paragraph::parse(&text));
@@ -410,26 +425,10 @@ fn parse_block_simple(block: &str) -> Node {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rstest::rstest;
 
     #[test]
     fn parse_empty_string() {
         let doc = parse("");
         assert_eq!(doc.children().len(), 0);
-    }
-
-    /// 코드 블록 안 빈 줄 테스트
-    #[rstest]
-    #[case("```\nline1\n\nline2\n```", "line1\n\nline2")]
-    #[case(
-        "```rust\nfn main() {\n\n    println!(\"hi\");\n}\n```",
-        "fn main() {\n\n    println!(\"hi\");\n}"
-    )]
-    fn code_block_with_blank_line(#[case] input: &str, #[case] expected_content: &str) {
-        let doc = parse(input);
-        assert_eq!(doc.children().len(), 1, "코드 블록이 분리됨: {:?}", doc);
-        let block = &doc.children()[0];
-        assert!(block.is_code_block(), "CodeBlock이 아님: {:?}", block);
-        assert_eq!(block.content(), expected_content);
     }
 }

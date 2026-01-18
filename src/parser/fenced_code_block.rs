@@ -251,6 +251,9 @@ mod tests {
     #[case("  ```\n    code\n  ```", Some(("  code", None)))]    // 2칸만 제거, 추가 2칸 유지
     #[case("  ```\ncode\n  ```", Some(("code", None)))]          // 내용에 들여쓰기 없어도 OK
     #[case("    ```\ncode\n```", None)]                          // 4칸 들여쓰기는 펜스 아님
+    // 빈 줄 포함
+    #[case("```\nline1\n\nline2\n```", Some(("line1\n\nline2", None)))]
+    #[case("```rust\nfn main() {\n\n    println!(\"hi\");\n}\n```", Some(("fn main() {\n\n    println!(\"hi\");\n}", Some("rust"))))]
     fn fenced_code_block(#[case] input: &str, #[case] expected: Option<(&str, Option<&str>)>) {
         let result = parse(input, 0);
 
