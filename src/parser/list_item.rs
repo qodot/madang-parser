@@ -1,6 +1,9 @@
-//! List Item 파서
+//! List Item 파서 (CommonMark 5.2 List Items)
 //!
 //! Bullet 마커 (-*+)와 Ordered 마커 (1. 1))를 감지합니다.
+//! - 마커 인식 규칙 (Example 261, 265-269)
+//! - 들여쓰기 규칙
+//! - Continuation line 판별
 
 use super::context::{
     ListContinueReason, ListEndReason, ListItemNotStartReason, ListItemStart, ListItemStartReason,
@@ -165,194 +168,206 @@ fn try_ordered_marker(s: &str, indent: usize) -> Option<ListItemStart> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::context::{ListContinueReason, ListEndReason};
     use rstest::rstest;
 
-    /// try_start (Bullet) 테스트
-    /// expected: Ok((marker_char, indent, content_indent)) 또는 Err(reason)
+    // 5.2 List Items - 마커 인식 (try_start)
     #[rstest]
-    // Example 261: 마커 뒤 공백 없으면 리스트 아님
+    // Example 261: 마커 뒤 공백 필수
     #[case("-item", Err(ListItemNotStartReason::NotListMarker))]
     #[case("--item", Err(ListItemNotStartReason::NotListMarker))]
+    #[case("1.item", Err(ListItemNotStartReason::NotListMarker))]
     // 기본 Bullet 마커
-    #[case("- item", Ok(('-', 0, 2)))]
-    #[case("+ item", Ok(('+', 0, 2)))]
-    #[case("* item", Ok(('*', 0, 2)))]
-    // 마커 앞 들여쓰기 (0-3칸)
-    #[case(" - item", Ok(('-', 1, 3)))]
-    #[case("  - item", Ok(('-', 2, 4)))]
-    #[case("   - item", Ok(('-', 3, 5)))]
-    // 마커 뒤 여러 공백
-    #[case("-  item", Ok(('-', 0, 3)))]
-    #[case("-   item", Ok(('-', 0, 4)))]
-    #[case("-    item", Ok(('-', 0, 5)))]
-    #[case("-     item", Ok(('-', 0, 5)))]
-    // 빈 아이템 (마커만)
-    #[case("-", Ok(('-', 0, 1)))]
-    #[case("+", Ok(('+', 0, 1)))]
-    #[case("*", Ok(('*', 0, 1)))]
-    // Bullet 마커가 아닌 경우
+    #[case(
+        "- item",
+        Ok(ListItemStartReason::Started(ListItemStart::bullet('-', 0, 2, "item")))
+    )]
+    #[case(
+        "+ item",
+        Ok(ListItemStartReason::Started(ListItemStart::bullet('+', 0, 2, "item")))
+    )]
+    #[case(
+        "* item",
+        Ok(ListItemStartReason::Started(ListItemStart::bullet('*', 0, 2, "item")))
+    )]
+    // Bullet 마커 앞 들여쓰기 (0-3칸)
+    #[case(
+        " - item",
+        Ok(ListItemStartReason::Started(ListItemStart::bullet('-', 1, 3, "item")))
+    )]
+    #[case(
+        "  - item",
+        Ok(ListItemStartReason::Started(ListItemStart::bullet('-', 2, 4, "item")))
+    )]
+    #[case(
+        "   - item",
+        Ok(ListItemStartReason::Started(ListItemStart::bullet('-', 3, 5, "item")))
+    )]
+    // Bullet 마커 뒤 여러 공백
+    #[case(
+        "-  item",
+        Ok(ListItemStartReason::Started(ListItemStart::bullet('-', 0, 3, "item")))
+    )]
+    #[case(
+        "-   item",
+        Ok(ListItemStartReason::Started(ListItemStart::bullet('-', 0, 4, "item")))
+    )]
+    #[case(
+        "-    item",
+        Ok(ListItemStartReason::Started(ListItemStart::bullet('-', 0, 5, "item")))
+    )]
+    #[case(
+        "-     item",
+        Ok(ListItemStartReason::Started(ListItemStart::bullet('-', 0, 5, " item")))
+    )]
+    // Bullet 빈 아이템
+    #[case(
+        "-",
+        Ok(ListItemStartReason::Started(ListItemStart::bullet('-', 0, 1, "")))
+    )]
+    #[case(
+        "+",
+        Ok(ListItemStartReason::Started(ListItemStart::bullet('+', 0, 1, "")))
+    )]
+    #[case(
+        "*",
+        Ok(ListItemStartReason::Started(ListItemStart::bullet('*', 0, 1, "")))
+    )]
+    // 기본 Ordered 마커
+    #[case(
+        "1. item",
+        Ok(ListItemStartReason::Started(ListItemStart::ordered(1, '.', 0, 3, "item")))
+    )]
+    #[case(
+        "2. item",
+        Ok(ListItemStartReason::Started(ListItemStart::ordered(2, '.', 0, 3, "item")))
+    )]
+    #[case(
+        "10. item",
+        Ok(ListItemStartReason::Started(ListItemStart::ordered(10, '.', 0, 4, "item")))
+    )]
+    #[case(
+        "123. item",
+        Ok(ListItemStartReason::Started(ListItemStart::ordered(123, '.', 0, 5, "item")))
+    )]
+    #[case(
+        "1) item",
+        Ok(ListItemStartReason::Started(ListItemStart::ordered(1, ')', 0, 3, "item")))
+    )]
+    #[case(
+        "2) item",
+        Ok(ListItemStartReason::Started(ListItemStart::ordered(2, ')', 0, 3, "item")))
+    )]
+    #[case(
+        "10) item",
+        Ok(ListItemStartReason::Started(ListItemStart::ordered(10, ')', 0, 4, "item")))
+    )]
+    // Ordered 마커 앞 들여쓰기
+    #[case(
+        " 1. item",
+        Ok(ListItemStartReason::Started(ListItemStart::ordered(1, '.', 1, 4, "item")))
+    )]
+    #[case(
+        "  1. item",
+        Ok(ListItemStartReason::Started(ListItemStart::ordered(1, '.', 2, 5, "item")))
+    )]
+    #[case(
+        "   1. item",
+        Ok(ListItemStartReason::Started(ListItemStart::ordered(1, '.', 3, 6, "item")))
+    )]
+    // Ordered 마커 뒤 여러 공백
+    #[case(
+        "1.  item",
+        Ok(ListItemStartReason::Started(ListItemStart::ordered(1, '.', 0, 4, "item")))
+    )]
+    #[case(
+        "1.   item",
+        Ok(ListItemStartReason::Started(ListItemStart::ordered(1, '.', 0, 5, "item")))
+    )]
+    // 9자리까지 허용
+    #[case(
+        "123456789. item",
+        Ok(ListItemStartReason::Started(ListItemStart::ordered(123456789, '.', 0, 11, "item")))
+    )]
+    // Ordered 빈 아이템
+    #[case(
+        "1.",
+        Ok(ListItemStartReason::Started(ListItemStart::ordered(1, '.', 0, 2, "")))
+    )]
+    #[case(
+        "1)",
+        Ok(ListItemStartReason::Started(ListItemStart::ordered(1, ')', 0, 2, "")))
+    )]
+    // 에러 케이스
     #[case("    - item", Err(ListItemNotStartReason::CodeBlockIndented))]
+    #[case("    1. item", Err(ListItemNotStartReason::CodeBlockIndented))]
     #[case("text", Err(ListItemNotStartReason::NotListMarker))]
     #[case("", Err(ListItemNotStartReason::NotListMarker))]
-    fn test_bullet_marker(
-        #[case] input: &str,
-        #[case] expected: Result<(char, usize, usize), ListItemNotStartReason>,
-    ) {
-        let result = try_start(input);
-        match expected {
-            Ok((marker_char, indent, content_indent)) => {
-                assert!(result.is_ok(), "Bullet이어야 함: {:?}", input);
-                let ListItemStartReason::Started(start) = result.unwrap();
-                assert_eq!(start.marker, ListMarker::Bullet(marker_char), "marker");
-                assert_eq!(start.indent, indent, "indent");
-                assert_eq!(start.content_indent, content_indent, "content_indent");
-            }
-            Err(expected_reason) => {
-                assert!(result.is_err(), "Bullet이 아니어야 함: {:?}", input);
-                assert_eq!(result.unwrap_err(), expected_reason);
-            }
-        }
-    }
-
-    /// try_start (Ordered) 테스트
-    /// expected: Ok((start_num, delimiter, indent, content_indent)) 또는 Err(reason)
-    #[rstest]
-    // Example 261: 마커 뒤 공백 없으면 리스트 아님
-    #[case("1.item", Err(ListItemNotStartReason::NotListMarker))]
-    // 기본 Ordered 마커 (. 구분자)
-    #[case("1. item", Ok((1, '.', 0, 3)))]
-    #[case("2. item", Ok((2, '.', 0, 3)))]
-    #[case("10. item", Ok((10, '.', 0, 4)))]
-    #[case("123. item", Ok((123, '.', 0, 5)))]
-    // 기본 Ordered 마커 () 구분자)
-    #[case("1) item", Ok((1, ')', 0, 3)))]
-    #[case("2) item", Ok((2, ')', 0, 3)))]
-    #[case("10) item", Ok((10, ')', 0, 4)))]
-    // 마커 앞 들여쓰기 (0-3칸)
-    #[case(" 1. item", Ok((1, '.', 1, 4)))]
-    #[case("  1. item", Ok((1, '.', 2, 5)))]
-    #[case("   1. item", Ok((1, '.', 3, 6)))]
-    // 마커 뒤 여러 공백
-    #[case("1.  item", Ok((1, '.', 0, 4)))]
-    #[case("1.   item", Ok((1, '.', 0, 5)))]
-    // 9자리까지 허용
-    #[case("123456789. item", Ok((123456789, '.', 0, 11)))]
-    // 빈 아이템
-    #[case("1.", Ok((1, '.', 0, 2)))]
-    #[case("1)", Ok((1, ')', 0, 2)))]
-    // Ordered 마커가 아닌 경우
-    #[case("    1. item", Err(ListItemNotStartReason::CodeBlockIndented))]
     #[case("1234567890. item", Err(ListItemNotStartReason::NotListMarker))]
     #[case("0. item", Err(ListItemNotStartReason::NotListMarker))]
     #[case("a. item", Err(ListItemNotStartReason::NotListMarker))]
     #[case("1: item", Err(ListItemNotStartReason::NotListMarker))]
-    fn test_ordered_marker(
+    fn test_try_start(
         #[case] input: &str,
-        #[case] expected: Result<(usize, char, usize, usize), ListItemNotStartReason>,
+        #[case] expected: Result<ListItemStartReason, ListItemNotStartReason>,
     ) {
-        let result = try_start(input);
-        match expected {
-            Ok((start_num, delimiter, indent, content_indent)) => {
-                assert!(result.is_ok(), "Ordered여야 함: {:?}", input);
-                let ListItemStartReason::Started(start) = result.unwrap();
-                match start.marker {
-                    ListMarker::Ordered { start: s, delimiter: d } => {
-                        assert_eq!(s, start_num, "start number");
-                        assert_eq!(d, delimiter, "delimiter");
-                    }
-                    _ => panic!("Ordered 마커여야 함: {:?}", input),
-                }
-                assert_eq!(start.indent, indent, "indent");
-                assert_eq!(start.content_indent, content_indent, "content_indent");
-            }
-            Err(expected_reason) => {
-                // Ordered가 아니어야 함 (Bullet이거나 에러)
-                match &result {
-                    Ok(ListItemStartReason::Started(s)) => {
-                        if let ListMarker::Ordered { .. } = s.marker {
-                            panic!("Ordered가 아니어야 함: {:?}", input);
-                        }
-                    }
-                    Err(reason) => {
-                        assert_eq!(*reason, expected_reason);
-                    }
-                }
-            }
-        }
+        assert_eq!(try_start(input), expected);
     }
 
-    /// 빈 줄 처리 테스트 - 항상 Err(Blank) 반환
+    // 5.2 List Items - 종료/계속 판별 (try_end)
     #[rstest]
-    #[case("")]
-    #[case("  ")]
-    #[case("\t")]
-    fn test_try_end_blank_line(#[case] line: &str) {
-        let marker = ListMarker::Bullet('-');
-        let result = try_end(line, &marker, 2);
-        assert!(matches!(result, Err(ListContinueReason::Blank)), "계속(Blank)이어야 함");
-    }
-
-    /// 같은 마커 타입 → 새 아이템으로 계속
-    #[rstest]
-    #[case("- b", ListMarker::Bullet('-'))]           // 같은 bullet
-    #[case("- c", ListMarker::Bullet('-'))]
-    #[case("+ b", ListMarker::Bullet('+'))]
-    #[case("* b", ListMarker::Bullet('*'))]
-    #[case("2. b", ListMarker::Ordered { start: 1, delimiter: '.' })]  // 같은 ordered (번호 달라도 OK)
-    #[case("3. c", ListMarker::Ordered { start: 1, delimiter: '.' })]
-    #[case("2) b", ListMarker::Ordered { start: 1, delimiter: ')' })]
-    fn test_try_end_same_marker_continues(
+    // 빈 줄 → Blank
+    #[case("", ListMarker::Bullet('-'), 2, Err(ListContinueReason::Blank))]
+    #[case("  ", ListMarker::Bullet('-'), 2, Err(ListContinueReason::Blank))]
+    #[case("\t", ListMarker::Bullet('-'), 2, Err(ListContinueReason::Blank))]
+    // 같은 마커 → 새 아이템
+    #[case(
+        "- b",
+        ListMarker::Bullet('-'),
+        2,
+        Err(ListContinueReason::NewItem(ListItemStart::bullet('-', 0, 2, "b")))
+    )]
+    #[case(
+        "+ b",
+        ListMarker::Bullet('+'),
+        2,
+        Err(ListContinueReason::NewItem(ListItemStart::bullet('+', 0, 2, "b")))
+    )]
+    #[case(
+        "* b",
+        ListMarker::Bullet('*'),
+        2,
+        Err(ListContinueReason::NewItem(ListItemStart::bullet('*', 0, 2, "b")))
+    )]
+    #[case("2. b", ListMarker::Ordered { start: 1, delimiter: '.' }, 2, Err(ListContinueReason::NewItem(ListItemStart::ordered(2, '.', 0, 3, "b"))))]
+    #[case("2) b", ListMarker::Ordered { start: 1, delimiter: ')' }, 2, Err(ListContinueReason::NewItem(ListItemStart::ordered(2, ')', 0, 3, "b"))))]
+    // Continuation line
+    #[case("  continued", ListMarker::Bullet('-'), 2, Err(ListContinueReason::ContinuationLine("continued".to_string())))]
+    #[case("   continued", ListMarker::Bullet('-'), 2, Err(ListContinueReason::ContinuationLine(" continued".to_string())))]
+    #[case("    continued", ListMarker::Bullet('-'), 2, Err(ListContinueReason::ContinuationLine("  continued".to_string())))]
+    // 리스트 종료 (다른 마커)
+    #[case("+ b", ListMarker::Bullet('-'), 2, Ok(ListEndReason::Reprocess))]
+    #[case("* b", ListMarker::Bullet('-'), 2, Ok(ListEndReason::Reprocess))]
+    #[case("- b", ListMarker::Bullet('+'), 2, Ok(ListEndReason::Reprocess))]
+    #[case("1) b", ListMarker::Ordered { start: 1, delimiter: '.' }, 2, Ok(ListEndReason::Reprocess))]
+    #[case("1. b", ListMarker::Ordered { start: 1, delimiter: ')' }, 2, Ok(ListEndReason::Reprocess))]
+    #[case("1. b", ListMarker::Bullet('-'), 2, Ok(ListEndReason::Reprocess))]
+    #[case("- b", ListMarker::Ordered { start: 1, delimiter: '.' }, 2, Ok(ListEndReason::Reprocess))]
+    // 리스트 종료 (비리스트 내용)
+    #[case("some text", ListMarker::Bullet('-'), 2, Ok(ListEndReason::Reprocess))]
+    #[case("# heading", ListMarker::Bullet('-'), 2, Ok(ListEndReason::Reprocess))]
+    #[case(
+        "> blockquote",
+        ListMarker::Bullet('-'),
+        2,
+        Ok(ListEndReason::Reprocess)
+    )]
+    #[case("```code", ListMarker::Bullet('-'), 2, Ok(ListEndReason::Reprocess))]
+    fn test_try_end(
         #[case] line: &str,
         #[case] marker: ListMarker,
-    ) {
-        let result = try_end(line, &marker, 2);
-        assert!(matches!(result, Err(ListContinueReason::NewItem(_))), "새 아이템으로 계속해야 함: {:?}", result);
-    }
-
-    /// 리스트 종료 (Reprocess) 테스트: 다른 마커 또는 비리스트 내용
-    #[rstest]
-    // 다른 Bullet 마커
-    #[case("+ b", ListMarker::Bullet('-'))]
-    #[case("* b", ListMarker::Bullet('-'))]
-    #[case("- b", ListMarker::Bullet('+'))]
-    // 다른 Ordered delimiter
-    #[case("1) b", ListMarker::Ordered { start: 1, delimiter: '.' })]
-    #[case("1. b", ListMarker::Ordered { start: 1, delimiter: ')' })]
-    // Ordered vs Bullet
-    #[case("1. b", ListMarker::Bullet('-'))]
-    #[case("- b", ListMarker::Ordered { start: 1, delimiter: '.' })]
-    // 비리스트 내용
-    #[case("some text", ListMarker::Bullet('-'))]
-    #[case("# heading", ListMarker::Bullet('-'))]
-    #[case("> blockquote", ListMarker::Bullet('-'))]
-    #[case("```code", ListMarker::Bullet('-'))]
-    fn test_try_end_reprocess(#[case] line: &str, #[case] marker: ListMarker) {
-        let result = try_end(line, &marker, 2);
-        assert!(
-            matches!(result, Ok(ListEndReason::Reprocess)),
-            "종료(Reprocess)여야 함: {:?}",
-            result
-        );
-    }
-
-    /// Continuation line (content_indent 이상 들여쓰기)
-    #[rstest]
-    #[case("  continued", 2, "continued")]     // 정확히 content_indent
-    #[case("   continued", 2, " continued")]   // content_indent + 1
-    #[case("    continued", 2, "  continued")] // content_indent + 2
-    fn test_try_end_continuation_line(
-        #[case] line: &str,
         #[case] content_indent: usize,
-        #[case] expected_content: &str,
+        #[case] expected: Result<ListEndReason, ListContinueReason>,
     ) {
-        let marker = ListMarker::Bullet('-');
-        let result = try_end(line, &marker, content_indent);
-        match result {
-            Err(ListContinueReason::ContinuationLine(content)) => {
-                assert_eq!(content, expected_content, "continuation 내용");
-            }
-            _ => panic!("ContinuationLine이어야 함: {:?}", result),
-        }
+        assert_eq!(try_end(line, &marker, content_indent), expected);
     }
 }

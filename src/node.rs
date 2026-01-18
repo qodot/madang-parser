@@ -167,6 +167,42 @@ impl Node {
             _ => panic!("Expected List node"),
         }
     }
+
+    // 테스트용 빌더 메서드
+    #[cfg(test)]
+    pub fn text(s: &str) -> Self {
+        Node::Text(s.to_string())
+    }
+
+    #[cfg(test)]
+    pub fn para(children: Vec<Self>) -> Self {
+        Node::Paragraph { children }
+    }
+
+    #[cfg(test)]
+    pub fn item(children: Vec<Self>) -> Self {
+        Node::ListItem { children }
+    }
+
+    #[cfg(test)]
+    pub fn bullet_list(tight: bool, children: Vec<Self>) -> Self {
+        Node::List {
+            list_type: ListType::Bullet,
+            start: 1,
+            tight,
+            children,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn ordered_list(delimiter: char, start: usize, tight: bool, children: Vec<Self>) -> Self {
+        Node::List {
+            list_type: ListType::Ordered { delimiter },
+            start,
+            tight,
+            children,
+        }
+    }
 }
 
 #[cfg(test)]

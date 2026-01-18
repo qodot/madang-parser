@@ -104,7 +104,7 @@ impl ListMarker {
 
 /// List Item 시작 정보
 /// try_start에서 반환되며, 같은 리스트 소속 여부 판단에 사용
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ListItemStart {
     /// 마커 타입
     pub marker: ListMarker,
@@ -126,10 +126,30 @@ impl ListItemStart {
         };
         Self { content, ..self }
     }
+
+    #[cfg(test)]
+    pub fn bullet(marker_char: char, indent: usize, content_indent: usize, content: &str) -> Self {
+        Self {
+            marker: ListMarker::Bullet(marker_char),
+            indent,
+            content_indent,
+            content: content.to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn ordered(start: usize, delimiter: char, indent: usize, content_indent: usize, content: &str) -> Self {
+        Self {
+            marker: ListMarker::Ordered { start, delimiter },
+            indent,
+            content_indent,
+            content: content.to_string(),
+        }
+    }
 }
 
 /// List Item 시작 성공 사유
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ListItemStartReason {
     /// 정상적인 시작
     Started(ListItemStart),
@@ -145,14 +165,14 @@ pub enum ListItemNotStartReason {
 }
 
 /// List 종료 사유
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ListEndReason {
     /// 줄 다시 처리 필요 (다른 블록/새 리스트)
     Reprocess,
 }
 
 /// List 계속 사유
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ListContinueReason {
     /// 빈 줄 (pending_blank 설정)
     Blank,
