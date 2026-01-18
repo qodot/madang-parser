@@ -4,9 +4,40 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::node::ListType;
+    use crate::node::{ListType, Node};
     use crate::parser::parse;
     use rstest::rstest;
+
+    // AST 빌더 매크로
+    macro_rules! text {
+        ($s:expr) => {
+            Node::Text($s.to_string())
+        };
+    }
+
+    macro_rules! para {
+        ($($child:expr),* $(,)?) => {
+            Node::Paragraph { children: vec![$($child),*] }
+        };
+    }
+
+    macro_rules! item {
+        ($($child:expr),* $(,)?) => {
+            Node::ListItem { children: vec![$($child),*] }
+        };
+    }
+
+    macro_rules! list {
+        ($($child:expr),* $(,)?) => {
+            Node::List {
+                list_type: ListType::Bullet,
+                start: 1,
+                tight: true,
+                children: vec![$($child),*],
+            }
+        };
+    }
+
 
     // CommonMark Example 261: 마커 뒤 공백 없으면 리스트 아님
     #[rstest]
@@ -144,26 +175,28 @@ mod tests {
         }
     }
 
-    /// 다중 라인 아이템 (continuation line)
-    /// content_indent 이상 들여쓰기된 줄은 같은 아이템에 속함
-    /// 초과 들여쓰기는 내용의 일부로 유지됨
-    /// 빈 줄도 내용에 포함됨 (CommonMark 명세 준수)
+    /// 리스트 파싱 통합 테스트 (AST 비교)
     #[rstest]
-    #[case("- line1\n  line2", 1, "line1\nline2")]
-    #[case("- line1\n   line2", 1, "line1\n line2")]
-    #[case("- line1\n  line2\n  line3", 1, "line1\nline2\nline3")]
-    #[case("- foo\n\n  bar", 1, "foo\n\nbar")]
-    #[case("- foo\n\n\n  bar", 1, "foo\n\n\nbar")]
-    fn multi_line_item(#[case] input: &str, #[case] item_count: usize, #[case] expected_text: &str) {
+    // 다중 라인 아이템 (continuation line)
+    #[case("- line1\n  line2",
+        list![item![para![text!["line1\nline2"]]]])]
+    #[case("- line1\n  line2\n  line3",
+        list![item![para![text!["line1\nline2\nline3"]]]])]
+    // 다중 Paragraph 아이템 (빈 줄로 분리, 아이템 내부 빈 줄은 tight에 영향 없음)
+    #[case("- foo\n\n  bar",
+        list![item![para![text!["foo"]], para![text!["bar"]]]])]
+    #[case("- foo\n\n\n  bar",
+        list![item![para![text!["foo"]], para![text!["bar"]]]])]
+    // 중첩 리스트
+    #[case("- foo\n  - bar",
+        list![item![para![text!["foo"]], list![item![para![text!["bar"]]]]]])]
+    #[case("- foo\n  - bar\n  - baz",
+        list![item![para![text!["foo"]], list![item![para![text!["bar"]]], item![para![text!["baz"]]]]]])]
+    #[case("- foo\n  - bar\n- qux",
+        list![item![para![text!["foo"]], list![item![para![text!["bar"]]]]], item![para![text!["qux"]]]])]
+    fn list_structure(#[case] input: &str, #[case] expected: Node) {
         let doc = parse(input);
         assert_eq!(doc.children().len(), 1, "문서에 List가 하나여야 함");
-
-        let list = &doc.children()[0];
-        assert!(list.is_list(), "List여야 함: {:?}", list);
-        assert_eq!(list.children().len(), item_count, "아이템 수");
-
-        let item = &list.children()[0];
-        let para = &item.children()[0];
-        assert_eq!(para.children()[0].as_text(), expected_text, "다중 라인 텍스트");
+        assert_eq!(doc.children()[0], expected);
     }
 }

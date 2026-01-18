@@ -40,18 +40,20 @@ pub(crate) fn try_end(
         return Err(ListContinueReason::Blank);
     }
 
-    // 같은 마커 타입의 List Item이면 계속
-    if let Ok(ListItemStartReason::Started(new_start)) = try_start(line) {
-        if marker.is_same_type(&new_start.marker) {
-            return Err(ListContinueReason::NewItem(new_start));
-        }
-    }
-
     // Continuation line: content_indent 이상 들여쓰기 확인
+    // 중요: 새 아이템 체크보다 먼저! 중첩 리스트를 위해 필수.
+    // 예: "- foo\n  - bar"에서 "  - bar"는 continuation line이어야 함
     let indent = count_leading_char(line, ' ');
     if indent >= content_indent {
         let content = line[content_indent..].to_string();
         return Err(ListContinueReason::ContinuationLine(content));
+    }
+
+    // 같은 마커 타입의 List Item이면 새 아이템으로 계속
+    if let Ok(ListItemStartReason::Started(new_start)) = try_start(line) {
+        if marker.is_same_type(&new_start.marker) {
+            return Err(ListContinueReason::NewItem(new_start));
+        }
     }
 
     // 다른 마커 또는 리스트가 아닌 내용 → 종료

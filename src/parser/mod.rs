@@ -225,6 +225,24 @@ fn process_line_in_paragraph(line: &str, lines: Vec<String>, children: Vec<Node>
         return (children, context);
     }
 
+    // List 시작이면 Paragraph 종료 후 List 시작
+    // CommonMark: List는 Paragraph를 인터럽트 가능 (단, 빈 아이템 제외)
+    if let Ok(ListItemStartReason::Started(start)) = list_item::try_start(line) {
+        // 빈 아이템은 Paragraph 인터럽트 불가 (CommonMark 명세)
+        if !start.content.is_empty() {
+            let text = lines.join("\n");
+            let children = push_node(children, paragraph::parse(&text));
+            let context = ParsingContext::List {
+                first_item_start: start.clone(),
+                items: Vec::new(),
+                current_item_lines: vec![start.content],
+                tight: true,
+                pending_blank_count: 0,
+            };
+            return (children, context);
+        }
+    }
+
     // 줄 추가
     let lines = push_string(lines, line.trim().to_string());
     (children, ParsingContext::Paragraph { lines })
@@ -299,8 +317,20 @@ fn finalize_list(
 ) -> Vec<Node> {
     let (list_type, start) = first_item_start.marker.to_list_type();
     let all_items = push_item(items, current_item_lines);
-    let list_node = Node::build_list(list_type, start, tight, all_items, paragraph::parse);
+    // 아이템 내용을 전체 파서로 파싱하여 중첩 블록 지원
+    let list_node = Node::build_list(list_type, start, tight, all_items, parse_item_content);
     push_node(children, list_node)
+}
+
+/// 리스트 아이템 내용 파싱
+/// 전체 파서를 사용하여 중첩 리스트, 코드블록 등 지원
+fn parse_item_content(content: &str) -> Vec<Node> {
+    let doc = parse(content);
+    // Document의 children을 추출
+    match doc {
+        Node::Document { children } => children,
+        _ => vec![doc],
+    }
 }
 
 /// Indented Code Block 상태에서 줄 처리

@@ -10,7 +10,7 @@ pub enum ListType {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Node {
     Document { children: Vec<Node> },
     Heading { level: u8, children: Vec<Node> },
@@ -36,7 +36,7 @@ pub enum Node {
 
 impl Node {
     /// List 노드 생성
-    /// items: 각 아이템의 줄들, parse_item: 아이템 내용을 Node로 변환하는 함수
+    /// items: 각 아이템의 줄들, parse_item: 아이템 내용을 블록 노드들로 변환하는 함수
     pub fn build_list<F>(
         list_type: ListType,
         start: usize,
@@ -45,15 +45,15 @@ impl Node {
         parse_item: F,
     ) -> Self
     where
-        F: Fn(&str) -> Node,
+        F: Fn(&str) -> Vec<Node>,
     {
         let children: Vec<Node> = items
             .into_iter()
             .map(|item_lines| {
                 let text = item_lines.join("\n");
-                let parsed = parse_item(&text);
+                let parsed_blocks = parse_item(&text);
                 Node::ListItem {
-                    children: vec![parsed],
+                    children: parsed_blocks,
                 }
             })
             .collect();
