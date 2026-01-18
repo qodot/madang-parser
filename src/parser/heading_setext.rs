@@ -100,29 +100,35 @@ mod tests {
 
     /// Setext Heading 통합 테스트
     #[rstest]
-    // 레벨 1 (=)
+    // === CommonMark Example 80: 기본 케이스 ===
     #[case("Foo\n===", 1, "Foo")]
-    #[case("Foo\n=", 1, "Foo")]
-    #[case("Foo\n==========", 1, "Foo")]
-    // 레벨 2 (-)
     #[case("Foo\n---", 2, "Foo")]
-    #[case("Foo\n-", 2, "Foo")]
-    #[case("Foo\n----------", 2, "Foo")]
-    // 여러 줄 제목
+    // === CommonMark Example 81: 여러 줄 제목 ===
     #[case("Foo\nbar\n===", 1, "Foo\nbar")]
     #[case("Foo\nbar\nbaz\n---", 2, "Foo\nbar\nbaz")]
-    // 밑줄에 후행 공백
-    #[case("Foo\n===   ", 1, "Foo")]
-    #[case("Foo\n---   ", 2, "Foo")]
-    // 밑줄에 선행 들여쓰기 (1-3칸 허용)
+    // === CommonMark Example 83: 다양한 밑줄 길이 ===
+    #[case("Foo\n=", 1, "Foo")]
+    #[case("Foo\n-------------------------", 2, "Foo")]
+    #[case("Foo\n==========", 1, "Foo")]
+    // === CommonMark Example 84: 제목/밑줄 들여쓰기 ===
+    #[case("   Foo\n---", 2, "Foo")]
+    #[case("  Foo\n-----", 2, "Foo")]
+    #[case("  Foo\n  ===", 1, "Foo")]
+    // === CommonMark Example 86: 밑줄에 1-3칸 들여쓰기 허용 ===
+    #[case("Foo\n   ----", 2, "Foo")]
     #[case("Foo\n ===", 1, "Foo")]
     #[case("Foo\n  ===", 1, "Foo")]
     #[case("Foo\n   ===", 1, "Foo")]
     #[case("Foo\n ---", 2, "Foo")]
-    // 제목 텍스트에 들여쓰기 (1-3칸 허용)
+    // === CommonMark Example 89: 제목 뒤 trailing spaces (trim됨) ===
+    #[case("Foo  \n-----", 2, "Foo")]
+    // === 추가 케이스 ===
+    #[case("Foo\n-", 2, "Foo")]
+    #[case("Foo\n----------", 2, "Foo")]
+    #[case("Foo\n===   ", 1, "Foo")]
+    #[case("Foo\n---   ", 2, "Foo")]
     #[case(" Foo\n===", 1, "Foo")]
     #[case("  Foo\n===", 1, "Foo")]
-    #[case("   Foo\n===", 1, "Foo")]
     fn test_setext_heading(#[case] input: &str, #[case] level: u8, #[case] content: &str) {
         let doc = crate::parse(input);
         assert_eq!(doc.children().len(), 1, "입력: {:?}", input);
