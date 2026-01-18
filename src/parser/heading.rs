@@ -106,9 +106,7 @@ mod tests {
     // Heading이 아닌 케이스 (Paragraph로 처리)
     #[case("#no_space", None, "#no_space")]               // # 뒤 공백 없음
     #[case("####### not heading", None, "####### not heading")]  // 7개 이상 #
-    #[case("    # foo", None, "# foo")]                   // 4칸 들여쓰기
-    #[case("\t# foo", None, "# foo")]                     // 탭 = 4칸
-    #[case("  \t# foo", None, "# foo")]                   // 2칸 + 탭 = 6칸
+    // 4칸 이상 들여쓰기 → Indented Code Block (별도 테스트)
     fn test_heading(#[case] input: &str, #[case] level: Option<u8>, #[case] text: &str) {
         let doc = parse(input);
         assert_eq!(doc.children().len(), 1, "입력: {}", input);

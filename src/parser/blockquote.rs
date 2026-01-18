@@ -74,8 +74,7 @@ mod tests {
     #[case("> > nested", Some(2), "nested")]
     #[case("> > > deep", Some(3), "deep")]
     #[case("> > > > 4단계", Some(4), "4단계")]
-    // Blockquote가 아닌 케이스
-    #[case("    > hello", None, "> hello")]               // 4칸 들여쓰기 → Paragraph
+    // Blockquote가 아닌 케이스 (Indented Code Block으로 파싱됨 - 별도 테스트)
     // 다중줄 케이스
     #[case("> line1\n> line2", Some(1), "line1\nline2")]       // 연속 줄
     #[case("> a\n> b\n> c", Some(1), "a\nb\nc")]               // 3줄
