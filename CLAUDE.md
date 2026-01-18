@@ -29,6 +29,10 @@
      fn test_something(#[case] input: &str, #[case] expected: Type) { ... }
      ```
    - 개별 `#[test]` 함수 대신 `#[rstest]` + `#[case]`로 케이스 통합
+   - **CommonMark 명세의 Example은 반드시 테스트 케이스로 구현**
+     - 각 케이스에 `// Example NNN: 설명` 주석 추가
+     - 예: `#[case("> # Foo", Some((1, "Foo")), false)]  // Example 228`
+     - 명세의 모든 관련 Example을 누락 없이 포함
 6. **새 스펙 구현 전 명세 확인**: 새로운 마크다운 요소를 구현하기 전에
    - CommonMark 명세(https://spec.commonmark.org/)에서 해당 요소 정의 확인
    - 엣지 케이스와 공식 규칙을 먼저 파악
