@@ -11,7 +11,7 @@ use crate::node::ListType;
 /// Fenced Code Block 시작 정보
 /// try_start에서 반환되며, 종료 조건 판단에 사용
 #[derive(Debug, Clone)]
-pub struct FencedCodeBlockStart {
+pub struct CodeBlockFencedStart {
     /// 펜스 문자 ('`' 또는 '~')
     pub fence_char: char,
     /// 펜스 길이 (최소 3)
@@ -24,30 +24,30 @@ pub struct FencedCodeBlockStart {
 
 /// Fenced Code Block 시작 성공 사유
 #[derive(Debug, Clone)]
-pub enum FencedCodeBlockStartReason {
+pub enum CodeBlockFencedStartReason {
     /// 정상적인 시작
-    Started(FencedCodeBlockStart),
+    Started(CodeBlockFencedStart),
 }
 
 /// Fenced Code Block 시작 아님 사유
 #[derive(Debug, Clone, PartialEq)]
-pub enum FencedCodeBlockNotStartReason {
+pub enum CodeBlockFencedNotStartReason {
     /// 4칸 이상 들여쓰기 (indented code block으로 해석됨)
-    IndentedCodeBlock,
+    CodeBlockIndented,
     /// 펜스 문자 없음 (```, ~~~가 아님)
     NoFence,
 }
 
 /// Fenced Code Block 종료 사유
 #[derive(Debug, Clone, PartialEq)]
-pub enum FencedCodeBlockEndReason {
+pub enum CodeBlockFencedEndReason {
     /// 닫는 펜스 발견
     ClosingFence,
 }
 
 /// Fenced Code Block 계속 사유
 #[derive(Debug, Clone, PartialEq)]
-pub enum FencedCodeBlockContinueReason {
+pub enum CodeBlockFencedContinueReason {
     /// 4칸 이상 들여쓰기 (코드 내용)
     TooMuchIndent,
     /// 펜스 길이 부족
@@ -139,7 +139,7 @@ pub enum ListItemStartReason {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ListItemNotStartReason {
     /// 4칸 이상 들여쓰기 (indented code block으로 해석됨)
-    IndentedCodeBlock,
+    CodeBlockIndented,
     /// 유효한 리스트 마커 아님
     NotListMarker,
 }
@@ -168,21 +168,21 @@ pub enum ListContinueReason {
 
 /// Indented Code Block 시작 정보
 #[derive(Debug, Clone, PartialEq)]
-pub struct IndentedCodeBlockStart {
+pub struct CodeBlockIndentedStart {
     /// 첫 줄 내용 (4칸 들여쓰기 제거 후)
     pub content: String,
 }
 
 /// Indented Code Block 시작 성공 사유
 #[derive(Debug, Clone, PartialEq)]
-pub enum IndentedCodeBlockStartReason {
+pub enum CodeBlockIndentedStartReason {
     /// 정상적인 시작
-    Started(IndentedCodeBlockStart),
+    Started(CodeBlockIndentedStart),
 }
 
 /// Indented Code Block 시작 아님 사유
 #[derive(Debug, Clone, PartialEq)]
-pub enum IndentedCodeBlockNotStartReason {
+pub enum CodeBlockIndentedNotStartReason {
     /// 빈 줄 (공백만 있는 줄 포함)
     Empty,
     /// 들여쓰기 부족 (4칸 미만)
@@ -230,7 +230,7 @@ pub enum HeadingSetextStartReason {
 #[derive(Debug, Clone, PartialEq)]
 pub enum HeadingSetextNotStartReason {
     /// 4칸 이상 들여쓰기 (코드 블록으로 해석됨)
-    IndentedCodeBlock,
+    CodeBlockIndented,
     /// 빈 줄
     Empty,
     /// 밑줄 문자(=, -)가 아님
@@ -249,9 +249,9 @@ pub enum ParsingContext {
     None,
 
     /// Fenced Code Block 파싱 중
-    FencedCodeBlock {
+    CodeBlockFenced {
         /// 시작 정보 (불변)
-        start: FencedCodeBlockStart,
+        start: CodeBlockFencedStart,
         /// 축적된 코드 줄 (가변)
         content: Vec<String>,
     },
@@ -277,7 +277,7 @@ pub enum ParsingContext {
     },
 
     /// Indented Code Block 파싱 중
-    IndentedCodeBlock {
+    CodeBlockIndented {
         /// 축적된 코드 줄 (4칸 들여쓰기 제거 후)
         lines: Vec<String>,
         /// 대기 중인 빈 줄 개수 (다음 코드 줄이 오면 내용에 추가)

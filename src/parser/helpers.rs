@@ -20,6 +20,21 @@ pub(crate) fn remove_indent(s: &str, n: usize) -> &str {
     &s[remove..]
 }
 
+/// 앞뒤 빈 줄(빈 문자열) 제거 후 join
+pub(crate) fn trim_blank_lines(lines: Vec<String>) -> String {
+    let trimmed_lines: Vec<_> = lines
+        .into_iter()
+        .skip_while(|s| s.trim().is_empty())
+        .collect();
+    let mut trimmed_lines: Vec<_> = trimmed_lines
+        .into_iter()
+        .rev()
+        .skip_while(|s| s.trim().is_empty())
+        .collect();
+    trimmed_lines.reverse();
+    trimmed_lines.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,5 +120,34 @@ mod tests {
     #[case("  \tcode", 6)]      // 2 + 4
     fn test_calculate_indent(#[case] input: &str, #[case] expected: usize) {
         assert_eq!(calculate_indent(input), expected);
+    }
+
+    #[rstest]
+    // 빈 Vec
+    #[case(vec![], "")]
+    // 모두 빈 줄
+    #[case(vec!["".to_string()], "")]
+    #[case(vec!["".to_string(), "".to_string()], "")]
+    #[case(vec!["  ".to_string()], "")]                    // 공백만 있는 줄도 빈 줄
+    // 앞에만 빈 줄
+    #[case(vec!["".to_string(), "code".to_string()], "code")]
+    #[case(vec!["".to_string(), "".to_string(), "code".to_string()], "code")]
+    #[case(vec!["  ".to_string(), "code".to_string()], "code")]  // 공백만 있는 앞줄
+    // 뒤에만 빈 줄
+    #[case(vec!["code".to_string(), "".to_string()], "code")]
+    #[case(vec!["code".to_string(), "".to_string(), "".to_string()], "code")]
+    #[case(vec!["code".to_string(), "  ".to_string()], "code")]  // 공백만 있는 뒷줄
+    // 앞뒤 모두 빈 줄
+    #[case(vec!["".to_string(), "code".to_string(), "".to_string()], "code")]
+    #[case(vec!["".to_string(), "".to_string(), "code".to_string(), "".to_string(), "".to_string()], "code")]
+    // 중간 빈 줄은 유지
+    #[case(vec!["a".to_string(), "".to_string(), "b".to_string()], "a\n\nb")]
+    #[case(vec!["".to_string(), "a".to_string(), "".to_string(), "b".to_string(), "".to_string()], "a\n\nb")]
+    // 빈 줄 없음
+    #[case(vec!["a".to_string()], "a")]
+    #[case(vec!["a".to_string(), "b".to_string()], "a\nb")]
+    #[case(vec!["a".to_string(), "b".to_string(), "c".to_string()], "a\nb\nc")]
+    fn test_trim_blank_lines(#[case] input: Vec<String>, #[case] expected: &str) {
+        assert_eq!(trim_blank_lines(input), expected);
     }
 }

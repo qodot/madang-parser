@@ -15,7 +15,7 @@ pub(crate) fn try_start(line: &str) -> Result<ListItemStartReason, ListItemNotSt
 
     // 4칸 이상 들여쓰기는 코드 블록
     if indent > 3 {
-        return Err(ListItemNotStartReason::IndentedCodeBlock);
+        return Err(ListItemNotStartReason::CodeBlockIndented);
     }
 
     let after_indent = &line[indent..];
@@ -187,7 +187,7 @@ mod tests {
     #[case("+", Ok(('+', 0, 1)))]
     #[case("*", Ok(('*', 0, 1)))]
     // Bullet 마커가 아닌 경우
-    #[case("    - item", Err(ListItemNotStartReason::IndentedCodeBlock))]  // 4칸 들여쓰기
+    #[case("    - item", Err(ListItemNotStartReason::CodeBlockIndented))]  // 4칸 들여쓰기
     #[case("-item", Err(ListItemNotStartReason::NotListMarker))]           // 마커 뒤 공백 없음
     #[case("--item", Err(ListItemNotStartReason::NotListMarker))]          // 두 번째 문자도 마커
     #[case("text", Err(ListItemNotStartReason::NotListMarker))]            // 일반 텍스트
@@ -237,7 +237,7 @@ mod tests {
     #[case("1.", Ok((1, '.', 0, 2)))]
     #[case("1)", Ok((1, ')', 0, 2)))]
     // Ordered 마커가 아닌 경우
-    #[case("    1. item", Err(ListItemNotStartReason::IndentedCodeBlock))]  // 4칸 들여쓰기
+    #[case("    1. item", Err(ListItemNotStartReason::CodeBlockIndented))]  // 4칸 들여쓰기
     #[case("1.item", Err(ListItemNotStartReason::NotListMarker))]           // 마커 뒤 공백 없음
     #[case("1234567890. item", Err(ListItemNotStartReason::NotListMarker))] // 10자리 → 너무 김
     #[case("0. item", Err(ListItemNotStartReason::NotListMarker))]          // 0으로 시작

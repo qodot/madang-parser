@@ -15,7 +15,7 @@ use super::context::{
 pub fn try_start(line: &str, indent: usize) -> Result<HeadingSetextStartReason, HeadingSetextNotStartReason> {
     // 들여쓰기 4칸 이상이면 코드 블록
     if indent > 3 {
-        return Err(HeadingSetextNotStartReason::IndentedCodeBlock);
+        return Err(HeadingSetextNotStartReason::CodeBlockIndented);
     }
 
     // 후행 공백 제거
@@ -65,9 +65,9 @@ mod tests {
     #[case("===", 1, Ok(SetextLevel::Level1))]
     #[case("===", 2, Ok(SetextLevel::Level1))]
     #[case("===", 3, Ok(SetextLevel::Level1))]
-    // === 무효: 4칸 이상 들여쓰기 → IndentedCodeBlock ===
-    #[case("===", 4, Err(HeadingSetextNotStartReason::IndentedCodeBlock))]
-    #[case("===", 5, Err(HeadingSetextNotStartReason::IndentedCodeBlock))]
+    // === 무효: 4칸 이상 들여쓰기 → CodeBlockIndented ===
+    #[case("===", 4, Err(HeadingSetextNotStartReason::CodeBlockIndented))]
+    #[case("===", 5, Err(HeadingSetextNotStartReason::CodeBlockIndented))]
     // === 무효: 빈 줄 → Empty ===
     #[case("", 0, Err(HeadingSetextNotStartReason::Empty))]
     #[case("   ", 0, Err(HeadingSetextNotStartReason::Empty))]

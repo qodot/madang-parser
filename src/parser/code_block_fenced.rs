@@ -4,17 +4,17 @@
 
 use crate::node::Node;
 use super::context::{
-    FencedCodeBlockContinueReason, FencedCodeBlockEndReason, FencedCodeBlockNotStartReason,
-    FencedCodeBlockStart, FencedCodeBlockStartReason,
+    CodeBlockFencedContinueReason, CodeBlockFencedEndReason, CodeBlockFencedNotStartReason,
+    CodeBlockFencedStart, CodeBlockFencedStartReason,
 };
 use super::helpers::{count_leading_char, remove_indent};
 
 /// Fenced Code Block 시작 줄인지 확인
 /// 성공 시 Ok(Started), 실패 시 Err(사유) 반환
-pub(crate) fn try_start(line: &str) -> Result<FencedCodeBlockStartReason, FencedCodeBlockNotStartReason> {
+pub(crate) fn try_start(line: &str) -> Result<CodeBlockFencedStartReason, CodeBlockFencedNotStartReason> {
     let indent = count_leading_char(line, ' ');
     if indent > 3 {
-        return Err(FencedCodeBlockNotStartReason::IndentedCodeBlock);
+        return Err(CodeBlockFencedNotStartReason::CodeBlockIndented);
     }
 
     let after_indent = &line[indent..];
@@ -24,7 +24,7 @@ pub(crate) fn try_start(line: &str) -> Result<FencedCodeBlockStartReason, Fenced
     } else if after_indent.starts_with("~~~") {
         ('~', count_leading_char(after_indent, '~'))
     } else {
-        return Err(FencedCodeBlockNotStartReason::NoFence);
+        return Err(CodeBlockFencedNotStartReason::NoFence);
     };
 
     let info = {
@@ -37,7 +37,7 @@ pub(crate) fn try_start(line: &str) -> Result<FencedCodeBlockStartReason, Fenced
         }
     };
 
-    Ok(FencedCodeBlockStartReason::Started(FencedCodeBlockStart {
+    Ok(CodeBlockFencedStartReason::Started(CodeBlockFencedStart {
         fence_char,
         fence_len,
         info,
@@ -51,10 +51,10 @@ pub(crate) fn try_end(
     line: &str,
     fence_char: char,
     min_fence_len: usize,
-) -> Result<FencedCodeBlockEndReason, FencedCodeBlockContinueReason> {
+) -> Result<CodeBlockFencedEndReason, CodeBlockFencedContinueReason> {
     let indent = count_leading_char(line, ' ');
     if indent > 3 {
-        return Err(FencedCodeBlockContinueReason::TooMuchIndent);
+        return Err(CodeBlockFencedContinueReason::TooMuchIndent);
     }
 
     let after_indent = &line[indent..];
@@ -62,20 +62,20 @@ pub(crate) fn try_end(
 
     // 펜스 문자 없음 (다른 문자로 시작)
     if closing_len == 0 {
-        return Err(FencedCodeBlockContinueReason::FenceCharMismatch);
+        return Err(CodeBlockFencedContinueReason::FenceCharMismatch);
     }
 
     // 펜스 길이 부족
     if closing_len < min_fence_len {
-        return Err(FencedCodeBlockContinueReason::FenceTooShort);
+        return Err(CodeBlockFencedContinueReason::FenceTooShort);
     }
 
     // 펜스 뒤 텍스트 있음
     if !after_indent[closing_len..].trim().is_empty() {
-        return Err(FencedCodeBlockContinueReason::TextAfterFence);
+        return Err(CodeBlockFencedContinueReason::TextAfterFence);
     }
 
-    Ok(FencedCodeBlockEndReason::ClosingFence)
+    Ok(CodeBlockFencedEndReason::ClosingFence)
 }
 
 /// Fenced Code Block 파싱 시도 (블록 단위)
@@ -91,7 +91,7 @@ pub fn parse(text: &str, _indent: usize) -> Option<Node> {
     // 여는 펜스의 들여쓰기 계산 (0-3칸만 허용)
     let first_line = lines[0];
     let start = match try_start(first_line) {
-        Ok(FencedCodeBlockStartReason::Started(s)) => s,
+        Ok(CodeBlockFencedStartReason::Started(s)) => s,
         Err(_) => return None,
     };
 
@@ -146,21 +146,21 @@ mod tests {
     #[case("   ```", Ok(('`', 3, None, 3)))]
     #[case("   ```rust", Ok(('`', 3, Some("rust"), 3)))]
     // 펜스가 아닌 경우
-    #[case("``", Err(FencedCodeBlockNotStartReason::NoFence))]           // 백틱 2개
-    #[case("~~", Err(FencedCodeBlockNotStartReason::NoFence))]           // 틸드 2개
-    #[case("    ```", Err(FencedCodeBlockNotStartReason::IndentedCodeBlock))]  // 4칸 들여쓰기
-    #[case("code", Err(FencedCodeBlockNotStartReason::NoFence))]         // 일반 텍스트
-    #[case("", Err(FencedCodeBlockNotStartReason::NoFence))]             // 빈 줄
-    #[case("  ", Err(FencedCodeBlockNotStartReason::NoFence))]           // 공백만
+    #[case("``", Err(CodeBlockFencedNotStartReason::NoFence))]           // 백틱 2개
+    #[case("~~", Err(CodeBlockFencedNotStartReason::NoFence))]           // 틸드 2개
+    #[case("    ```", Err(CodeBlockFencedNotStartReason::CodeBlockIndented))]  // 4칸 들여쓰기
+    #[case("code", Err(CodeBlockFencedNotStartReason::NoFence))]         // 일반 텍스트
+    #[case("", Err(CodeBlockFencedNotStartReason::NoFence))]             // 빈 줄
+    #[case("  ", Err(CodeBlockFencedNotStartReason::NoFence))]           // 공백만
     fn test_try_start(
         #[case] input: &str,
-        #[case] expected: Result<(char, usize, Option<&str>, usize), FencedCodeBlockNotStartReason>,
+        #[case] expected: Result<(char, usize, Option<&str>, usize), CodeBlockFencedNotStartReason>,
     ) {
         let result = try_start(input);
         match expected {
             Ok((expected_char, expected_len, expected_info, expected_indent)) => {
                 assert!(result.is_ok(), "시작이어야 함: {:?}", input);
-                let FencedCodeBlockStartReason::Started(start) = result.unwrap();
+                let CodeBlockFencedStartReason::Started(start) = result.unwrap();
                 assert_eq!(start.fence_char, expected_char, "fence_char");
                 assert_eq!(start.fence_len, expected_len, "fence_len");
                 assert_eq!(start.info.as_deref(), expected_info, "info");
@@ -190,18 +190,18 @@ mod tests {
     #[case("```  ", '`', 3, Ok(()))]
     #[case("~~~   ", '~', 3, Ok(()))]
     // 유효하지 않은 닫는 펜스
-    #[case("``", '`', 3, Err(FencedCodeBlockContinueReason::FenceTooShort))]       // 길이 부족
-    #[case("```", '`', 4, Err(FencedCodeBlockContinueReason::FenceTooShort))]      // 최소 길이보다 짧음
-    #[case("~~~", '`', 3, Err(FencedCodeBlockContinueReason::FenceCharMismatch))]  // 문자 불일치
-    #[case("```", '~', 3, Err(FencedCodeBlockContinueReason::FenceCharMismatch))]  // 문자 불일치
-    #[case("    ```", '`', 3, Err(FencedCodeBlockContinueReason::TooMuchIndent))]  // 4칸 들여쓰기
-    #[case("```code", '`', 3, Err(FencedCodeBlockContinueReason::TextAfterFence))] // 펜스 뒤 텍스트
-    #[case("``` x", '`', 3, Err(FencedCodeBlockContinueReason::TextAfterFence))]   // 펜스 뒤 텍스트
+    #[case("``", '`', 3, Err(CodeBlockFencedContinueReason::FenceTooShort))]       // 길이 부족
+    #[case("```", '`', 4, Err(CodeBlockFencedContinueReason::FenceTooShort))]      // 최소 길이보다 짧음
+    #[case("~~~", '`', 3, Err(CodeBlockFencedContinueReason::FenceCharMismatch))]  // 문자 불일치
+    #[case("```", '~', 3, Err(CodeBlockFencedContinueReason::FenceCharMismatch))]  // 문자 불일치
+    #[case("    ```", '`', 3, Err(CodeBlockFencedContinueReason::TooMuchIndent))]  // 4칸 들여쓰기
+    #[case("```code", '`', 3, Err(CodeBlockFencedContinueReason::TextAfterFence))] // 펜스 뒤 텍스트
+    #[case("``` x", '`', 3, Err(CodeBlockFencedContinueReason::TextAfterFence))]   // 펜스 뒤 텍스트
     fn test_try_end(
         #[case] input: &str,
         #[case] fence_char: char,
         #[case] min_len: usize,
-        #[case] expected: Result<(), FencedCodeBlockContinueReason>,
+        #[case] expected: Result<(), CodeBlockFencedContinueReason>,
     ) {
         let result = try_end(input, fence_char, min_len);
         match expected {
@@ -254,7 +254,7 @@ mod tests {
     // 빈 줄 포함
     #[case("```\nline1\n\nline2\n```", Some(("line1\n\nline2", None)))]
     #[case("```rust\nfn main() {\n\n    println!(\"hi\");\n}\n```", Some(("fn main() {\n\n    println!(\"hi\");\n}", Some("rust"))))]
-    fn fenced_code_block(#[case] input: &str, #[case] expected: Option<(&str, Option<&str>)>) {
+    fn code_block_fenced(#[case] input: &str, #[case] expected: Option<(&str, Option<&str>)>) {
         let result = parse(input, 0);
 
         match expected {

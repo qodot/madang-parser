@@ -3,7 +3,7 @@
 //! 4칸 들여쓰기로 작성된 코드 블록을 파싱합니다.
 
 use super::context::{
-    IndentedCodeBlockNotStartReason, IndentedCodeBlockStart, IndentedCodeBlockStartReason,
+    CodeBlockIndentedNotStartReason, CodeBlockIndentedStart, CodeBlockIndentedStartReason,
 };
 use super::helpers::count_leading_char;
 
@@ -11,23 +11,23 @@ use super::helpers::count_leading_char;
 /// 성공 시 Ok(Started), 실패 시 Err(사유) 반환
 pub(crate) fn try_start(
     line: &str,
-) -> Result<IndentedCodeBlockStartReason, IndentedCodeBlockNotStartReason> {
+) -> Result<CodeBlockIndentedStartReason, CodeBlockIndentedNotStartReason> {
     // 1. 들여쓰기 확인 (4칸 이상이면 코드 줄)
     let indent = count_leading_char(line, ' ');
     if indent >= 4 {
         // 4칸 제거 후 내용 반환 (공백만 있는 줄도 코드의 일부)
         let content = line[4..].to_string();
-        return Ok(IndentedCodeBlockStartReason::Started(
-            IndentedCodeBlockStart { content },
+        return Ok(CodeBlockIndentedStartReason::Started(
+            CodeBlockIndentedStart { content },
         ));
     }
 
     // 2. 4칸 미만 들여쓰기: 빈 줄이면 Empty, 아니면 InsufficientIndent
     if line.trim().is_empty() {
-        return Err(IndentedCodeBlockNotStartReason::Empty);
+        return Err(CodeBlockIndentedNotStartReason::Empty);
     }
 
-    Err(IndentedCodeBlockNotStartReason::InsufficientIndent)
+    Err(CodeBlockIndentedNotStartReason::InsufficientIndent)
 }
 
 #[cfg(test)]
@@ -40,7 +40,7 @@ mod tests {
     #[case("    code", true, "code")]  // 정확히 4칸
     #[case("     code", true, " code")]  // 5칸 (추가 공백 유지)
     #[case("        code", true, "    code")]  // 8칸 (4칸 제거 후 4칸 유지)
-    fn test_indented_code_block_basic(
+    fn test_code_block_indented_basic(
         #[case] input: &str,
         #[case] should_start: bool,
         #[case] expected_content: &str,
@@ -48,7 +48,7 @@ mod tests {
         let result = try_start(input);
         if should_start {
             let reason = result.expect("should start");
-            let IndentedCodeBlockStartReason::Started(start) = reason;
+            let CodeBlockIndentedStartReason::Started(start) = reason;
             assert_eq!(start.content, expected_content);
         } else {
             result.expect_err("should not start");
@@ -57,15 +57,15 @@ mod tests {
 
     // === 시작하지 않는 케이스 ===
     #[rstest]
-    #[case("", IndentedCodeBlockNotStartReason::Empty)]  // 빈 줄
-    #[case("   ", IndentedCodeBlockNotStartReason::Empty)]  // 공백만
-    #[case("code", IndentedCodeBlockNotStartReason::InsufficientIndent)]  // 들여쓰기 없음
-    #[case(" code", IndentedCodeBlockNotStartReason::InsufficientIndent)]  // 1칸
-    #[case("  code", IndentedCodeBlockNotStartReason::InsufficientIndent)]  // 2칸
-    #[case("   code", IndentedCodeBlockNotStartReason::InsufficientIndent)]  // 3칸
-    fn test_indented_code_block_not_start(
+    #[case("", CodeBlockIndentedNotStartReason::Empty)]  // 빈 줄
+    #[case("   ", CodeBlockIndentedNotStartReason::Empty)]  // 공백만
+    #[case("code", CodeBlockIndentedNotStartReason::InsufficientIndent)]  // 들여쓰기 없음
+    #[case(" code", CodeBlockIndentedNotStartReason::InsufficientIndent)]  // 1칸
+    #[case("  code", CodeBlockIndentedNotStartReason::InsufficientIndent)]  // 2칸
+    #[case("   code", CodeBlockIndentedNotStartReason::InsufficientIndent)]  // 3칸
+    fn test_code_block_indented_not_start(
         #[case] input: &str,
-        #[case] expected_reason: IndentedCodeBlockNotStartReason,
+        #[case] expected_reason: CodeBlockIndentedNotStartReason,
     ) {
         let result = try_start(input);
         let reason = result.expect_err("should not start");
@@ -94,7 +94,7 @@ mod tests {
         #[case("\n    \n    foo\n    ", "foo")]
         // Example 118: 후행 공백은 유지됨
         #[case("    foo  ", "foo  ")]
-        fn test_indented_code_block(#[case] input: &str, #[case] expected_content: &str) {
+        fn test_code_block_indented(#[case] input: &str, #[case] expected_content: &str) {
             let doc = parse(input);
             let Node::Document { children } = doc else {
                 panic!("expected Document");
