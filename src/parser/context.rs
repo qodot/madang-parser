@@ -22,6 +22,42 @@ pub struct FencedCodeBlockStart {
     pub indent: usize,
 }
 
+/// Fenced Code Block 시작 성공 사유
+#[derive(Debug, Clone)]
+pub enum FencedCodeBlockStartReason {
+    /// 정상적인 시작
+    Started(FencedCodeBlockStart),
+}
+
+/// Fenced Code Block 시작 아님 사유
+#[derive(Debug, Clone, PartialEq)]
+pub enum FencedCodeBlockNotStartReason {
+    /// 4칸 이상 들여쓰기 (indented code block으로 해석됨)
+    IndentedCodeBlock,
+    /// 펜스 문자 없음 (```, ~~~가 아님)
+    NoFence,
+}
+
+/// Fenced Code Block 종료 사유
+#[derive(Debug, Clone, PartialEq)]
+pub enum FencedCodeBlockEndReason {
+    /// 닫는 펜스 발견
+    ClosingFence,
+}
+
+/// Fenced Code Block 계속 사유
+#[derive(Debug, Clone, PartialEq)]
+pub enum FencedCodeBlockContinueReason {
+    /// 4칸 이상 들여쓰기 (코드 내용)
+    TooMuchIndent,
+    /// 펜스 길이 부족
+    FenceTooShort,
+    /// 펜스 문자 불일치
+    FenceCharMismatch,
+    /// 펜스 뒤 텍스트 있음
+    TextAfterFence,
+}
+
 // =============================================================================
 // List
 // =============================================================================
@@ -90,6 +126,22 @@ impl ListItemStart {
         };
         Self { content, ..self }
     }
+}
+
+/// List Item 시작 성공 사유
+#[derive(Debug, Clone)]
+pub enum ListItemStartReason {
+    /// 정상적인 시작
+    Started(ListItemStart),
+}
+
+/// List Item 시작 아님 사유
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListItemNotStartReason {
+    /// 4칸 이상 들여쓰기 (indented code block으로 해석됨)
+    IndentedCodeBlock,
+    /// 유효한 리스트 마커 아님
+    NotListMarker,
 }
 
 /// List 종료 사유

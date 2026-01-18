@@ -2,17 +2,20 @@
 //!
 //! Bullet 마커 (-*+)와 Ordered 마커 (1. 1))를 감지합니다.
 
-use super::context::{ListContinueReason, ListEndReason, ListItemStart, ListMarker};
+use super::context::{
+    ListContinueReason, ListEndReason, ListItemNotStartReason, ListItemStart, ListItemStartReason,
+    ListMarker,
+};
 use super::helpers::count_leading_char;
 
 /// List Item 시작 줄인지 확인
-/// 성공 시 시작 정보(ListItemStart) 반환
-pub(crate) fn try_start(line: &str) -> Option<ListItemStart> {
+/// 성공 시 Ok(Started), 실패 시 Err(사유) 반환
+pub(crate) fn try_start(line: &str) -> Result<ListItemStartReason, ListItemNotStartReason> {
     let indent = count_leading_char(line, ' ');
 
     // 4칸 이상 들여쓰기는 코드 블록
     if indent > 3 {
-        return None;
+        return Err(ListItemNotStartReason::IndentedCodeBlock);
     }
 
     let after_indent = &line[indent..];
@@ -20,7 +23,8 @@ pub(crate) fn try_start(line: &str) -> Option<ListItemStart> {
     // Bullet 또는 Ordered 마커 시도 → content 추출
     try_bullet_marker(after_indent, indent)
         .or_else(|| try_ordered_marker(after_indent, indent))
-        .map(|start| start.with_content_from(line))
+        .map(|start| ListItemStartReason::Started(start.with_content_from(line)))
+        .ok_or(ListItemNotStartReason::NotListMarker)
 }
 
 /// List 종료 여부 확인
@@ -37,7 +41,7 @@ pub(crate) fn try_end(
     }
 
     // 같은 마커 타입의 List Item이면 계속
-    if let Some(new_start) = try_start(line) {
+    if let Ok(ListItemStartReason::Started(new_start)) = try_start(line) {
         if marker.is_same_type(&new_start.marker) {
             return Err(ListContinueReason::NewItem(new_start));
         }
@@ -163,90 +167,91 @@ mod tests {
     use rstest::rstest;
 
     // === try_start (Bullet) 테스트 ===
-    // expected: Some((marker_char, indent, content_indent)) 또는 None
+    // expected: Ok((marker_char, indent, content_indent)) 또는 Err(reason)
     #[rstest]
     // 기본 Bullet 마커
-    #[case("- item", Some(('-', 0, 2)))]
-    #[case("+ item", Some(('+', 0, 2)))]
-    #[case("* item", Some(('*', 0, 2)))]
+    #[case("- item", Ok(('-', 0, 2)))]
+    #[case("+ item", Ok(('+', 0, 2)))]
+    #[case("* item", Ok(('*', 0, 2)))]
     // 마커 앞 들여쓰기 (0-3칸)
-    #[case(" - item", Some(('-', 1, 3)))]
-    #[case("  - item", Some(('-', 2, 4)))]
-    #[case("   - item", Some(('-', 3, 5)))]
+    #[case(" - item", Ok(('-', 1, 3)))]
+    #[case("  - item", Ok(('-', 2, 4)))]
+    #[case("   - item", Ok(('-', 3, 5)))]
     // 마커 뒤 여러 공백
-    #[case("-  item", Some(('-', 0, 3)))]
-    #[case("-   item", Some(('-', 0, 4)))]
-    #[case("-    item", Some(('-', 0, 5)))]   // 최대 4칸
-    #[case("-     item", Some(('-', 0, 5)))]  // 5칸이어도 content_indent는 5
+    #[case("-  item", Ok(('-', 0, 3)))]
+    #[case("-   item", Ok(('-', 0, 4)))]
+    #[case("-    item", Ok(('-', 0, 5)))]   // 최대 4칸
+    #[case("-     item", Ok(('-', 0, 5)))]  // 5칸이어도 content_indent는 5
     // 빈 아이템 (마커만)
-    #[case("-", Some(('-', 0, 1)))]
-    #[case("+", Some(('+', 0, 1)))]
-    #[case("*", Some(('*', 0, 1)))]
+    #[case("-", Ok(('-', 0, 1)))]
+    #[case("+", Ok(('+', 0, 1)))]
+    #[case("*", Ok(('*', 0, 1)))]
     // Bullet 마커가 아닌 경우
-    #[case("    - item", None)]  // 4칸 들여쓰기 → 코드 블록
-    #[case("-item", None)]       // 마커 뒤 공백 없음
-    #[case("--item", None)]      // 두 번째 문자도 마커
-    #[case("text", None)]        // 일반 텍스트
-    #[case("", None)]            // 빈 줄
+    #[case("    - item", Err(ListItemNotStartReason::IndentedCodeBlock))]  // 4칸 들여쓰기
+    #[case("-item", Err(ListItemNotStartReason::NotListMarker))]           // 마커 뒤 공백 없음
+    #[case("--item", Err(ListItemNotStartReason::NotListMarker))]          // 두 번째 문자도 마커
+    #[case("text", Err(ListItemNotStartReason::NotListMarker))]            // 일반 텍스트
+    #[case("", Err(ListItemNotStartReason::NotListMarker))]                // 빈 줄
     fn test_bullet_marker(
         #[case] input: &str,
-        #[case] expected: Option<(char, usize, usize)>,
+        #[case] expected: Result<(char, usize, usize), ListItemNotStartReason>,
     ) {
         let result = try_start(input);
         match expected {
-            Some((marker_char, indent, content_indent)) => {
-                assert!(result.is_some(), "Bullet이어야 함: {:?}", input);
-                let start = result.unwrap();
+            Ok((marker_char, indent, content_indent)) => {
+                assert!(result.is_ok(), "Bullet이어야 함: {:?}", input);
+                let ListItemStartReason::Started(start) = result.unwrap();
                 assert_eq!(start.marker, ListMarker::Bullet(marker_char), "marker");
                 assert_eq!(start.indent, indent, "indent");
                 assert_eq!(start.content_indent, content_indent, "content_indent");
             }
-            None => {
-                assert!(result.is_none(), "Bullet이 아니어야 함: {:?}", input);
+            Err(expected_reason) => {
+                assert!(result.is_err(), "Bullet이 아니어야 함: {:?}", input);
+                assert_eq!(result.unwrap_err(), expected_reason);
             }
         }
     }
 
     // === try_start (Ordered) 테스트 ===
-    // expected: Some((start_num, delimiter, indent, content_indent)) 또는 None
+    // expected: Ok((start_num, delimiter, indent, content_indent)) 또는 Err(reason)
     #[rstest]
     // 기본 Ordered 마커 (. 구분자)
-    #[case("1. item", Some((1, '.', 0, 3)))]
-    #[case("2. item", Some((2, '.', 0, 3)))]
-    #[case("10. item", Some((10, '.', 0, 4)))]
-    #[case("123. item", Some((123, '.', 0, 5)))]
+    #[case("1. item", Ok((1, '.', 0, 3)))]
+    #[case("2. item", Ok((2, '.', 0, 3)))]
+    #[case("10. item", Ok((10, '.', 0, 4)))]
+    #[case("123. item", Ok((123, '.', 0, 5)))]
     // 기본 Ordered 마커 () 구분자)
-    #[case("1) item", Some((1, ')', 0, 3)))]
-    #[case("2) item", Some((2, ')', 0, 3)))]
-    #[case("10) item", Some((10, ')', 0, 4)))]
+    #[case("1) item", Ok((1, ')', 0, 3)))]
+    #[case("2) item", Ok((2, ')', 0, 3)))]
+    #[case("10) item", Ok((10, ')', 0, 4)))]
     // 마커 앞 들여쓰기 (0-3칸)
-    #[case(" 1. item", Some((1, '.', 1, 4)))]
-    #[case("  1. item", Some((1, '.', 2, 5)))]
-    #[case("   1. item", Some((1, '.', 3, 6)))]
+    #[case(" 1. item", Ok((1, '.', 1, 4)))]
+    #[case("  1. item", Ok((1, '.', 2, 5)))]
+    #[case("   1. item", Ok((1, '.', 3, 6)))]
     // 마커 뒤 여러 공백
-    #[case("1.  item", Some((1, '.', 0, 4)))]
-    #[case("1.   item", Some((1, '.', 0, 5)))]
+    #[case("1.  item", Ok((1, '.', 0, 4)))]
+    #[case("1.   item", Ok((1, '.', 0, 5)))]
     // 9자리까지 허용
-    #[case("123456789. item", Some((123456789, '.', 0, 11)))]
+    #[case("123456789. item", Ok((123456789, '.', 0, 11)))]
     // 빈 아이템
-    #[case("1.", Some((1, '.', 0, 2)))]
-    #[case("1)", Some((1, ')', 0, 2)))]
+    #[case("1.", Ok((1, '.', 0, 2)))]
+    #[case("1)", Ok((1, ')', 0, 2)))]
     // Ordered 마커가 아닌 경우
-    #[case("    1. item", None)]      // 4칸 들여쓰기 → 코드 블록
-    #[case("1.item", None)]           // 마커 뒤 공백 없음
-    #[case("1234567890. item", None)] // 10자리 → 너무 김
-    #[case("0. item", None)]          // 0으로 시작 (선택: 허용할지 말지)
-    #[case("a. item", None)]          // 문자
-    #[case("1: item", None)]          // 잘못된 구분자
+    #[case("    1. item", Err(ListItemNotStartReason::IndentedCodeBlock))]  // 4칸 들여쓰기
+    #[case("1.item", Err(ListItemNotStartReason::NotListMarker))]           // 마커 뒤 공백 없음
+    #[case("1234567890. item", Err(ListItemNotStartReason::NotListMarker))] // 10자리 → 너무 김
+    #[case("0. item", Err(ListItemNotStartReason::NotListMarker))]          // 0으로 시작
+    #[case("a. item", Err(ListItemNotStartReason::NotListMarker))]          // 문자
+    #[case("1: item", Err(ListItemNotStartReason::NotListMarker))]          // 잘못된 구분자
     fn test_ordered_marker(
         #[case] input: &str,
-        #[case] expected: Option<(usize, char, usize, usize)>,
+        #[case] expected: Result<(usize, char, usize, usize), ListItemNotStartReason>,
     ) {
         let result = try_start(input);
         match expected {
-            Some((start_num, delimiter, indent, content_indent)) => {
-                assert!(result.is_some(), "Ordered여야 함: {:?}", input);
-                let start = result.unwrap();
+            Ok((start_num, delimiter, indent, content_indent)) => {
+                assert!(result.is_ok(), "Ordered여야 함: {:?}", input);
+                let ListItemStartReason::Started(start) = result.unwrap();
                 match start.marker {
                     ListMarker::Ordered { start: s, delimiter: d } => {
                         assert_eq!(s, start_num, "start number");
@@ -257,11 +262,16 @@ mod tests {
                 assert_eq!(start.indent, indent, "indent");
                 assert_eq!(start.content_indent, content_indent, "content_indent");
             }
-            None => {
-                // Ordered가 아니어야 함 (Bullet이거나 None)
-                if let Some(s) = &result {
-                    if let ListMarker::Ordered { .. } = s.marker {
-                        panic!("Ordered가 아니어야 함: {:?}", input);
+            Err(expected_reason) => {
+                // Ordered가 아니어야 함 (Bullet이거나 에러)
+                match &result {
+                    Ok(ListItemStartReason::Started(s)) => {
+                        if let ListMarker::Ordered { .. } = s.marker {
+                            panic!("Ordered가 아니어야 함: {:?}", input);
+                        }
+                    }
+                    Err(reason) => {
+                        assert_eq!(*reason, expected_reason);
                     }
                 }
             }

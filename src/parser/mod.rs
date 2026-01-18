@@ -15,10 +15,11 @@ mod thematic_break;
 
 use crate::node::Node;
 use context::{
-    FencedCodeBlockStart, ListContinueReason, ListEndReason, ListItemStart, ParsingContext,
+    FencedCodeBlockStart, FencedCodeBlockStartReason, ListContinueReason, ListEndReason,
+    ListItemStart, ListItemStartReason, ParsingContext,
 };
 use fenced_code_block::{
-    is_end as is_end_fenced_code_block, try_start as try_start_fenced_code_block,
+    try_end as try_end_fenced_code_block, try_start as try_start_fenced_code_block,
 };
 use helpers::{calculate_indent, remove_indent};
 
@@ -70,7 +71,7 @@ fn process_line_in_none(line: &str, children: Vec<Node>) -> ParserState {
     }
 
     // Fenced Code Block 시작 감지
-    if let Some(start) = try_start_fenced_code_block(line) {
+    if let Ok(FencedCodeBlockStartReason::Started(start)) = try_start_fenced_code_block(line) {
         let context = ParsingContext::FencedCodeBlock {
             start,
             content: Vec::new(),
@@ -101,7 +102,7 @@ fn process_line_in_none(line: &str, children: Vec<Node>) -> ParserState {
     }
 
     // List 시작 감지
-    if let Some(start) = list_item::try_start(line) {
+    if let Ok(ListItemStartReason::Started(start)) = list_item::try_start(line) {
         let content = start.content.clone();
         let context = ParsingContext::List {
             first_item_start: start,
@@ -128,7 +129,7 @@ fn process_line_in_code_block(
     children: Vec<Node>,
 ) -> ParserState {
     // 닫는 펜스인지 확인
-    if is_end_fenced_code_block(line, start.fence_char, start.fence_len) {
+    if try_end_fenced_code_block(line, start.fence_char, start.fence_len).is_ok() {
         let content_str = content.join("\n");
         let node = Node::CodeBlock {
             info: start.info,
@@ -156,7 +157,7 @@ fn process_line_in_paragraph(line: &str, lines: Vec<String>, children: Vec<Node>
     }
 
     // Fenced Code Block 시작이면 Paragraph 종료 후 Code Block 시작
-    if let Some(start) = try_start_fenced_code_block(line) {
+    if let Ok(FencedCodeBlockStartReason::Started(start)) = try_start_fenced_code_block(line) {
         let text = lines.join("\n");
         let children = push_node(children, paragraph::parse(&text));
         let context = ParsingContext::FencedCodeBlock {
@@ -297,7 +298,7 @@ fn process_line_in_blockquote(line: &str, lines: Vec<String>, children: Vec<Node
     }
 
     // Fenced Code Block 시작이면 Blockquote 종료
-    if let Some(start) = try_start_fenced_code_block(line) {
+    if let Ok(FencedCodeBlockStartReason::Started(start)) = try_start_fenced_code_block(line) {
         let text = lines.join("\n");
         let children = if let Some(node) = blockquote::parse(&text, 0, parse_block_simple) {
             push_node(children, node)
