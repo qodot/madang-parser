@@ -9,6 +9,7 @@ mod fenced_code_block;
 mod heading;
 mod heading_setext;
 mod helpers;
+mod indented_code_block;
 mod list;
 mod list_item;
 mod paragraph;
@@ -17,13 +18,15 @@ mod thematic_break;
 use crate::node::Node;
 use context::{
     FencedCodeBlockStart, FencedCodeBlockStartReason, HeadingSetextStartReason,
-    ListContinueReason, ListEndReason, ListItemStart, ListItemStartReason, ParsingContext,
+    IndentedCodeBlockStartReason, ListContinueReason, ListEndReason, ListItemStart,
+    ListItemStartReason, ParsingContext,
 };
 use fenced_code_block::{
     try_end as try_end_fenced_code_block, try_start as try_start_fenced_code_block,
 };
 use heading_setext::try_start as try_start_heading_setext;
 use helpers::{calculate_indent, remove_indent};
+use indented_code_block::try_start as try_start_indented_code_block;
 
 /// 파서 상태: (완성된 노드들, 현재 컨텍스트)
 type ParserState = (Vec<Node>, ParsingContext);
@@ -62,6 +65,9 @@ fn process_line(line: &str, context: ParsingContext, children: Vec<Node>) -> Par
             tight,
             pending_blank_count,
         } => process_line_in_list(line, first_item_start, items, current_item_lines, tight, pending_blank_count, children),
+        ParsingContext::IndentedCodeBlock { lines, pending_blank_count } => {
+            process_line_in_indented_code_block(line, lines, pending_blank_count, children)
+        }
     }
 }
 
@@ -111,6 +117,15 @@ fn process_line_in_none(line: &str, children: Vec<Node>) -> ParserState {
             items: Vec::new(),
             current_item_lines: vec![content],
             tight: true,
+            pending_blank_count: 0,
+        };
+        return (children, context);
+    }
+
+    // Indented Code Block 시작 감지 (List 후에 체크 - 명세상 List가 우선)
+    if let Ok(IndentedCodeBlockStartReason::Started(start)) = try_start_indented_code_block(line) {
+        let context = ParsingContext::IndentedCodeBlock {
+            lines: vec![start.content],
             pending_blank_count: 0,
         };
         return (children, context);
@@ -288,7 +303,62 @@ fn finalize_list(
     push_node(children, list_node)
 }
 
+/// Indented Code Block 상태에서 줄 처리
+fn process_line_in_indented_code_block(
+    line: &str,
+    lines: Vec<String>,
+    pending_blank_count: usize,
+    children: Vec<Node>,
+) -> ParserState {
+    use context::IndentedCodeBlockNotStartReason;
 
+    match try_start_indented_code_block(line) {
+        // 4칸 이상 들여쓰기 → 코드 줄 추가
+        Ok(IndentedCodeBlockStartReason::Started(start)) => {
+            let mut lines = lines;
+            for _ in 0..pending_blank_count {
+                lines = push_string(lines, String::new());
+            }
+            let lines = push_string(lines, start.content);
+            let context = ParsingContext::IndentedCodeBlock {
+                lines,
+                pending_blank_count: 0,
+            };
+            (children, context)
+        }
+        // 4칸 미만 빈 줄 → 대기 (코드 블록 종료 여부는 다음 줄에서 결정)
+        Err(IndentedCodeBlockNotStartReason::Empty) => {
+            let context = ParsingContext::IndentedCodeBlock {
+                lines,
+                pending_blank_count: pending_blank_count + 1,
+            };
+            (children, context)
+        }
+        // 4칸 미만 비빈 줄 → 코드 블록 종료
+        Err(IndentedCodeBlockNotStartReason::InsufficientIndent) => {
+            let content = trim_blank_lines(lines);
+            let node = Node::CodeBlock { info: None, content };
+            let children = push_node(children, node);
+            // 현재 줄을 다시 처리
+            process_line_in_none(line, children)
+        }
+    }
+}
+
+/// 앞뒤 빈 줄(빈 문자열) 제거 후 join
+fn trim_blank_lines(lines: Vec<String>) -> String {
+    let trimmed_lines: Vec<_> = lines
+        .into_iter()
+        .skip_while(|s| s.trim().is_empty())
+        .collect();
+    let mut trimmed_lines: Vec<_> = trimmed_lines
+        .into_iter()
+        .rev()
+        .skip_while(|s| s.trim().is_empty())
+        .collect();
+    trimmed_lines.reverse();
+    trimmed_lines.join("\n")
+}
 
 /// 아이템 리스트에 아이템 추가
 fn push_item(mut items: Vec<Vec<String>>, item: Vec<String>) -> Vec<Vec<String>> {
@@ -387,7 +457,12 @@ fn finalize_context(context: ParsingContext, children: Vec<Node>) -> Vec<Node> {
             current_item_lines,
             tight,
             pending_blank_count: _,
-        } => finalize_list(&first_item_start, items, current_item_lines, tight, children)
+        } => finalize_list(&first_item_start, items, current_item_lines, tight, children),
+        ParsingContext::IndentedCodeBlock { lines, pending_blank_count: _ } => {
+            let content = trim_blank_lines(lines);
+            let node = Node::CodeBlock { info: None, content };
+            push_node(children, node)
+        }
     }
 }
 

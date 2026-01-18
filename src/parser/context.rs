@@ -163,6 +163,33 @@ pub enum ListContinueReason {
 }
 
 // =============================================================================
+// Indented Code Block
+// =============================================================================
+
+/// Indented Code Block 시작 정보
+#[derive(Debug, Clone, PartialEq)]
+pub struct IndentedCodeBlockStart {
+    /// 첫 줄 내용 (4칸 들여쓰기 제거 후)
+    pub content: String,
+}
+
+/// Indented Code Block 시작 성공 사유
+#[derive(Debug, Clone, PartialEq)]
+pub enum IndentedCodeBlockStartReason {
+    /// 정상적인 시작
+    Started(IndentedCodeBlockStart),
+}
+
+/// Indented Code Block 시작 아님 사유
+#[derive(Debug, Clone, PartialEq)]
+pub enum IndentedCodeBlockNotStartReason {
+    /// 빈 줄 (공백만 있는 줄 포함)
+    Empty,
+    /// 들여쓰기 부족 (4칸 미만)
+    InsufficientIndent,
+}
+
+// =============================================================================
 // Setext Heading
 // =============================================================================
 
@@ -246,6 +273,14 @@ pub enum ParsingContext {
         /// tight 리스트 여부 (아이템 간 빈 줄 없음)
         tight: bool,
         /// 대기 중인 빈 줄 개수 (continuation 시 내용에 추가)
+        pending_blank_count: usize,
+    },
+
+    /// Indented Code Block 파싱 중
+    IndentedCodeBlock {
+        /// 축적된 코드 줄 (4칸 들여쓰기 제거 후)
+        lines: Vec<String>,
+        /// 대기 중인 빈 줄 개수 (다음 코드 줄이 오면 내용에 추가)
         pending_blank_count: usize,
     },
 }
