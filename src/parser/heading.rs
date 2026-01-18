@@ -73,43 +73,44 @@ mod tests {
     use crate::parser::parse;
     use rstest::rstest;
 
-    // level = None이면 Paragraph, Some(n)이면 Heading
+    /// ATX Heading 테스트
+    /// level = None이면 Paragraph, Some(n)이면 Heading
     #[rstest]
-    // === CommonMark Example 62: 모든 레벨 h1-h6 ===
+    // Example 62: 모든 레벨 h1-h6
     #[case("# foo", Some(1), "foo")]
     #[case("## foo", Some(2), "foo")]
     #[case("### foo", Some(3), "foo")]
     #[case("#### foo", Some(4), "foo")]
     #[case("##### foo", Some(5), "foo")]
     #[case("###### foo", Some(6), "foo")]
-    // === CommonMark Example 63: 7개 이상 # ===
+    // Example 63: 7개 이상 #
     #[case("####### foo", None, "####### foo")]
-    // === CommonMark Example 64: # 뒤 공백 없음 ===
+    // Example 64: # 뒤 공백 없음
     #[case("#5 bolt", None, "#5 bolt")]
     #[case("#hashtag", None, "#hashtag")]
-    // === CommonMark Example 67: # 뒤 여러 공백 ===
+    // Example 67: # 뒤 여러 공백
     #[case("#                  foo", Some(1), "foo")]
-    // === CommonMark Example 68: 1-3칸 들여쓰기 허용 ===
+    // Example 68: 1-3칸 들여쓰기 허용
     #[case(" ### foo", Some(3), "foo")]
     #[case("  ## foo", Some(2), "foo")]
     #[case("   # foo", Some(1), "foo")]
-    // === CommonMark Example 71: 닫는 # 시퀀스 ===
+    // Example 71: 닫는 # 시퀀스
     #[case("## foo ##", Some(2), "foo")]
     #[case("  ###   bar    ###", Some(3), "bar")]
-    // === CommonMark Example 72: 많은 닫는 # ===
+    // Example 72: 많은 닫는 #
     #[case("# foo ##################################", Some(1), "foo")]
     #[case("##### foo ##", Some(5), "foo")]
-    // === CommonMark Example 73: 닫는 # 뒤 공백 ===
+    // Example 73: 닫는 # 뒤 공백
     #[case("### foo ###     ", Some(3), "foo")]
-    // === CommonMark Example 74: 닫는 # 뒤 텍스트 ===
+    // Example 74: 닫는 # 뒤 텍스트
     #[case("### foo ### b", Some(3), "foo ### b")]
-    // === CommonMark Example 75: # 앞 공백 없음 ===
+    // Example 75: # 앞 공백 없음
     #[case("# foo#", Some(1), "foo#")]
-    // === CommonMark Example 79: 빈 heading ===
+    // Example 79: 빈 heading
     #[case("##", Some(2), "")]
     #[case("#", Some(1), "")]
     #[case("### ###", Some(3), "")]
-    // === 추가 케이스 ===
+    // 추가 케이스
     #[case("# heading", Some(1), "heading")]
     #[case("###### h6 title", Some(6), "h6 title")]
     #[case("# ", Some(1), "")]

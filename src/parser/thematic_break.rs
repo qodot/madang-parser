@@ -52,42 +52,43 @@ mod tests {
     use crate::parser::parse;
     use rstest::rstest;
 
-    // is_break = true면 ThematicBreak, false면 Paragraph
+    /// Thematic Break 테스트
+    /// is_break = true면 ThematicBreak, false면 Paragraph
     #[rstest]
-    // === CommonMark Example 43: 기본 케이스 ===
+    // Example 43: 기본 케이스
     #[case("***", true)]
     #[case("---", true)]
     #[case("___", true)]
-    // === CommonMark Example 44-45: 유효하지 않은 마커 문자 ===
+    // Example 44-45: 유효하지 않은 마커 문자
     #[case("+++", false)]
     #[case("===", false)]
-    // === CommonMark Example 46: 2개는 부족 ===
+    // Example 46: 2개는 부족
     #[case("**", false)]
     #[case("--", false)]
     #[case("__", false)]
-    // === CommonMark Example 47: 1-3칸 들여쓰기 허용 ===
+    // Example 47: 1-3칸 들여쓰기 허용
     #[case(" ***", true)]
     #[case("  ***", true)]
     #[case("   ***", true)]
-    // === CommonMark Example 48: 4칸 들여쓰기는 코드 블록 ===
+    // Example 48: 4칸 들여쓰기는 코드 블록
     #[case("    ***", false)]
-    // === CommonMark Example 50: 많은 문자 ===
+    // Example 50: 많은 문자
     #[case("_____________________________________", true)]
-    // === CommonMark Example 51: 공백 사이 ===
+    // Example 51: 공백 사이
     #[case(" - - -", true)]
-    // === CommonMark Example 52: 복잡한 공백 패턴 ===
+    // Example 52: 복잡한 공백 패턴
     #[case(" **  * ** * ** * **", true)]
-    // === CommonMark Example 53: 많은 공백 ===
+    // Example 53: 많은 공백
     #[case("-     -      -      -", true)]
-    // === CommonMark Example 54: 끝 공백 ===
+    // Example 54: 끝 공백
     #[case("- - - -    ", true)]
-    // === CommonMark Example 55: 다른 문자 포함 시 무효 ===
+    // Example 55: 다른 문자 포함 시 무효
     #[case("_ _ _ _ a", false)]
     #[case("a------", false)]
     #[case("---a---", false)]
-    // === CommonMark Example 56: 혼합 문자는 무효 ===
+    // Example 56: 혼합 문자는 무효
     #[case("*-*", false)]
-    // === 추가 케이스 ===
+    // 추가 케이스
     #[case("*****", true)]
     #[case("----------", true)]
     #[case("* * *", true)]

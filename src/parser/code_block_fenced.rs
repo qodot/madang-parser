@@ -124,8 +124,8 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
-    // === try_start 테스트 ===
-    // expected: Ok((fence_char, fence_len, info, indent)) 또는 Err(reason)
+    /// try_start 테스트
+    /// expected: Ok((fence_char, fence_len, info, indent)) 또는 Err(reason)
     #[rstest]
     // 백틱 펜스
     #[case("```", Ok(('`', 3, None, 0)))]
@@ -173,8 +173,8 @@ mod tests {
         }
     }
 
-    // === try_end 테스트 ===
-    // expected: Ok(()) 또는 Err(reason)
+    /// try_end 테스트
+    /// expected: Ok(()) 또는 Err(reason)
     #[rstest]
     // 유효한 닫는 펜스
     #[case("```", '`', 3, Ok(()))]
@@ -215,50 +215,48 @@ mod tests {
         }
     }
 
-    // === parse 테스트 (CommonMark Example 기반) ===
+    /// parse 테스트 (CommonMark Example 기반)
     #[rstest]
-    // === Example 119-120: 기본 백틱/틸드 펜스 ===
+    // Example 119-120: 기본 백틱/틸드 펜스
     #[case("```\ncode\n```", Some(("code", None)))]
     #[case("~~~\ncode\n~~~", Some(("code", None)))]
     #[case("```\nline1\nline2\n```", Some(("line1\nline2", None)))]
-    // === Example 121: 백틱/틸드 2개는 펜스 아님 ===
+    // Example 121: 백틱/틸드 2개는 펜스 아님
     #[case("``\ncode\n``", None)]
     #[case("~~\ncode\n~~", None)]
     #[case("code", None)]
-    // === Example 122-123: 다른 문자 펜스는 닫히지 않음 ===
+    // Example 122-123: 다른 문자 펜스는 닫히지 않음
     #[case("~~~\ncode\n```", Some(("code\n```", None)))]
     #[case("```\ncode\n~~~", Some(("code\n~~~", None)))]
-    // === Example 124-125: 닫는 펜스가 더 길어도 OK ===
+    // Example 124-125: 닫는 펜스가 더 길어도 OK
     #[case("`````\ncode\n`````", Some(("code", None)))]
     #[case("```\ncode\n`````", Some(("code", None)))]
     #[case("~~~~~\ncode\n~~~~~", Some(("code", None)))]
-    // === Example 126, 130: 빈 내용 ===
+    // Example 126, 130: 빈 내용
     #[case("```\n\n```", Some(("", None)))]
-    // === Example 127: 닫는 펜스 없음 → EOF까지 ===
+    // Example 127: 닫는 펜스 없음 → EOF까지
     #[case("```\ncode", Some(("code", None)))]
     #[case("```rust\ncode", Some(("code", Some("rust"))))]
     #[case("```\nline1\nline2", Some(("line1\nline2", None)))]
     #[case("~~~\ncode", Some(("code", None)))]
-    // === Example 131-133: 여는 펜스 들여쓰기 처리 ===
+    // Example 131-133: 여는 펜스 들여쓰기 처리
     #[case("  ```\n  code\n  ```", Some(("code", None)))]
     #[case("   ```\n   code\n   ```", Some(("code", None)))]
     #[case("  ```\n    code\n  ```", Some(("  code", None)))]
     #[case("  ```\ncode\n  ```", Some(("code", None)))]
-    // === Example 134: 4칸 들여쓰기 → indented code block ===
+    // Example 134: 4칸 들여쓰기 → indented code block
     #[case("    ```\ncode\n```", None)]
-    // === Example 137: 닫는 펜스 4칸 들여쓰기 무효 ===
-    // (이 테스트는 parse가 아닌 try_end에서 처리)
-    // === Example 139: 닫는 펜스 뒤 공백 외 문자 → 무효 ===
+    // Example 139: 닫는 펜스가 짧으면 무효
     #[case("`````\ncode\n```", Some(("code\n```", None)))]
     #[case("~~~~~\ncode\n~~~", Some(("code\n~~~", None)))]
-    // === Example 142-143: info string ===
+    // Example 142-143: info string
     #[case("```rust\ncode\n```", Some(("code", Some("rust"))))]
     #[case("``` rust \ncode\n```", Some(("code", Some("rust"))))]
     #[case("```rust python\ncode\n```", Some(("code", Some("rust python"))))]
     #[case("~~~rust\ncode\n~~~", Some(("code", Some("rust"))))]
-    // === Example 144: 특수 문자 info string ===
+    // Example 144: 특수 문자 info string
     #[case("````;\n````", Some(("", Some(";"))))]
-    // === 추가: 빈 줄 포함 ===
+    // 추가: 빈 줄 포함
     #[case("```\nline1\n\nline2\n```", Some(("line1\n\nline2", None)))]
     #[case("```rust\nfn main() {\n\n    println!(\"hi\");\n}\n```", Some(("fn main() {\n\n    println!(\"hi\");\n}", Some("rust"))))]
     fn code_block_fenced(#[case] input: &str, #[case] expected: Option<(&str, Option<&str>)>) {

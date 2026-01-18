@@ -49,38 +49,38 @@ mod tests {
 
     /// try_start 테스트: 유효/무효 케이스 통합
     #[rstest]
-    // === 유효한 밑줄: 레벨 1 (=) ===
+    // 유효한 밑줄: 레벨 1 (=)
     #[case("=", 0, Ok(SetextLevel::Level1))]
     #[case("==", 0, Ok(SetextLevel::Level1))]
     #[case("===", 0, Ok(SetextLevel::Level1))]
     #[case("==========", 0, Ok(SetextLevel::Level1))]
-    #[case("===   ", 0, Ok(SetextLevel::Level1))]  // 후행 공백 허용
-    // === 유효한 밑줄: 레벨 2 (-) ===
+    #[case("===   ", 0, Ok(SetextLevel::Level1))]
+    // 유효한 밑줄: 레벨 2 (-)
     #[case("-", 0, Ok(SetextLevel::Level2))]
     #[case("--", 0, Ok(SetextLevel::Level2))]
     #[case("---", 0, Ok(SetextLevel::Level2))]
     #[case("----------", 0, Ok(SetextLevel::Level2))]
-    #[case("---   ", 0, Ok(SetextLevel::Level2))]  // 후행 공백 허용
-    // === 들여쓰기: 0-3칸 허용 ===
+    #[case("---   ", 0, Ok(SetextLevel::Level2))]
+    // 들여쓰기: 0-3칸 허용
     #[case("===", 1, Ok(SetextLevel::Level1))]
     #[case("===", 2, Ok(SetextLevel::Level1))]
     #[case("===", 3, Ok(SetextLevel::Level1))]
-    // === 무효: 4칸 이상 들여쓰기 → CodeBlockIndented ===
+    // 무효: 4칸 이상 들여쓰기 → CodeBlockIndented
     #[case("===", 4, Err(HeadingSetextNotStartReason::CodeBlockIndented))]
     #[case("===", 5, Err(HeadingSetextNotStartReason::CodeBlockIndented))]
-    // === 무효: 빈 줄 → Empty ===
+    // 무효: 빈 줄 → Empty
     #[case("", 0, Err(HeadingSetextNotStartReason::Empty))]
     #[case("   ", 0, Err(HeadingSetextNotStartReason::Empty))]
-    // === 무효: 밑줄 문자가 아님 → NotUnderlineChar ===
+    // 무효: 밑줄 문자가 아님 → NotUnderlineChar
     #[case("abc", 0, Err(HeadingSetextNotStartReason::NotUnderlineChar))]
     #[case("###", 0, Err(HeadingSetextNotStartReason::NotUnderlineChar))]
-    // === 무효: 문자 섞임 → MixedChars ===
+    // 무효: 문자 섞임 → MixedChars
     #[case("= =", 0, Err(HeadingSetextNotStartReason::MixedChars))]
     #[case("- -", 0, Err(HeadingSetextNotStartReason::MixedChars))]
     #[case("== ==", 0, Err(HeadingSetextNotStartReason::MixedChars))]
     #[case("=-=", 0, Err(HeadingSetextNotStartReason::MixedChars))]
     #[case("==-", 0, Err(HeadingSetextNotStartReason::MixedChars))]
-    // === 무효: 밑줄 뒤 비공백 문자 → MixedChars ===
+    // 무효: 밑줄 뒤 비공백 문자 → MixedChars
     #[case("=== bar", 0, Err(HeadingSetextNotStartReason::MixedChars))]
     #[case("--- foo", 0, Err(HeadingSetextNotStartReason::MixedChars))]
     fn test_try_start(
@@ -100,29 +100,29 @@ mod tests {
 
     /// Setext Heading 통합 테스트
     #[rstest]
-    // === CommonMark Example 80: 기본 케이스 ===
+    // Example 80: 기본 케이스
     #[case("Foo\n===", 1, "Foo")]
     #[case("Foo\n---", 2, "Foo")]
-    // === CommonMark Example 81: 여러 줄 제목 ===
+    // Example 81: 여러 줄 제목
     #[case("Foo\nbar\n===", 1, "Foo\nbar")]
     #[case("Foo\nbar\nbaz\n---", 2, "Foo\nbar\nbaz")]
-    // === CommonMark Example 83: 다양한 밑줄 길이 ===
+    // Example 83: 다양한 밑줄 길이
     #[case("Foo\n=", 1, "Foo")]
     #[case("Foo\n-------------------------", 2, "Foo")]
     #[case("Foo\n==========", 1, "Foo")]
-    // === CommonMark Example 84: 제목/밑줄 들여쓰기 ===
+    // Example 84: 제목/밑줄 들여쓰기
     #[case("   Foo\n---", 2, "Foo")]
     #[case("  Foo\n-----", 2, "Foo")]
     #[case("  Foo\n  ===", 1, "Foo")]
-    // === CommonMark Example 86: 밑줄에 1-3칸 들여쓰기 허용 ===
+    // Example 86: 밑줄에 1-3칸 들여쓰기 허용
     #[case("Foo\n   ----", 2, "Foo")]
     #[case("Foo\n ===", 1, "Foo")]
     #[case("Foo\n  ===", 1, "Foo")]
     #[case("Foo\n   ===", 1, "Foo")]
     #[case("Foo\n ---", 2, "Foo")]
-    // === CommonMark Example 89: 제목 뒤 trailing spaces (trim됨) ===
+    // Example 89: 제목 뒤 trailing spaces (trim됨)
     #[case("Foo  \n-----", 2, "Foo")]
-    // === 추가 케이스 ===
+    // 추가 케이스
     #[case("Foo\n-", 2, "Foo")]
     #[case("Foo\n----------", 2, "Foo")]
     #[case("Foo\n===   ", 1, "Foo")]
@@ -141,15 +141,15 @@ mod tests {
     /// Setext Heading이 아닌 케이스 테스트
     #[rstest]
     // 밑줄에 4칸 이상 들여쓰기 → Setext 아님, Paragraph continuation
-    #[case("Foo\n    ===", 1)]  // Paragraph("Foo\n===")
+    #[case("Foo\n    ===", 1)]
     // 빈 줄 후 밑줄 → Setext 아님
-    #[case("Foo\n\n===", 2)]  // Paragraph("Foo"), Paragraph("===")
+    #[case("Foo\n\n===", 2)]
     // 밑줄만 단독 (=) → Paragraph
     #[case("===", 1)]
     // 밑줄만 단독 (-) → Thematic Break
     #[case("---", 1)]
     // 밑줄 뒤 비공백 문자 → Setext 아님, Paragraph continuation
-    #[case("Foo\n=== bar", 1)]  // Paragraph("Foo\n=== bar")
+    #[case("Foo\n=== bar", 1)]
     fn test_not_setext_heading(#[case] input: &str, #[case] expected_children: usize) {
         let doc = crate::parse(input);
         assert_eq!(
