@@ -80,6 +80,9 @@ mod tests {
     #[case("== ==", 0, Err(HeadingSetextNotStartReason::MixedChars))]
     #[case("=-=", 0, Err(HeadingSetextNotStartReason::MixedChars))]
     #[case("==-", 0, Err(HeadingSetextNotStartReason::MixedChars))]
+    // === 무효: 밑줄 뒤 비공백 문자 → MixedChars ===
+    #[case("=== bar", 0, Err(HeadingSetextNotStartReason::MixedChars))]
+    #[case("--- foo", 0, Err(HeadingSetextNotStartReason::MixedChars))]
     fn test_try_start(
         #[case] line: &str,
         #[case] indent: usize,
@@ -111,6 +114,15 @@ mod tests {
     // 밑줄에 후행 공백
     #[case("Foo\n===   ", 1, "Foo")]
     #[case("Foo\n---   ", 2, "Foo")]
+    // 밑줄에 선행 들여쓰기 (1-3칸 허용)
+    #[case("Foo\n ===", 1, "Foo")]
+    #[case("Foo\n  ===", 1, "Foo")]
+    #[case("Foo\n   ===", 1, "Foo")]
+    #[case("Foo\n ---", 2, "Foo")]
+    // 제목 텍스트에 들여쓰기 (1-3칸 허용)
+    #[case(" Foo\n===", 1, "Foo")]
+    #[case("  Foo\n===", 1, "Foo")]
+    #[case("   Foo\n===", 1, "Foo")]
     fn test_setext_heading(#[case] input: &str, #[case] level: u8, #[case] content: &str) {
         let doc = crate::parse(input);
         assert_eq!(doc.children().len(), 1, "입력: {:?}", input);
@@ -118,5 +130,36 @@ mod tests {
         assert!(heading.is_heading(), "Heading이 아님: {:?}", heading);
         assert_eq!(heading.level(), level, "레벨 불일치: {:?}", input);
         assert_eq!(heading.children()[0].as_text(), content, "내용 불일치: {:?}", input);
+    }
+
+    /// Setext Heading이 아닌 케이스 테스트
+    #[rstest]
+    // 밑줄에 4칸 이상 들여쓰기 → Setext 아님, Paragraph continuation
+    #[case("Foo\n    ===", 1)]  // Paragraph("Foo\n===")
+    // 빈 줄 후 밑줄 → Setext 아님
+    #[case("Foo\n\n===", 2)]  // Paragraph("Foo"), Paragraph("===")
+    // 밑줄만 단독 (=) → Paragraph
+    #[case("===", 1)]
+    // 밑줄만 단독 (-) → Thematic Break
+    #[case("---", 1)]
+    // 밑줄 뒤 비공백 문자 → Setext 아님, Paragraph continuation
+    #[case("Foo\n=== bar", 1)]  // Paragraph("Foo\n=== bar")
+    fn test_not_setext_heading(#[case] input: &str, #[case] expected_children: usize) {
+        let doc = crate::parse(input);
+        assert_eq!(
+            doc.children().len(),
+            expected_children,
+            "자식 개수 불일치. 입력: {:?}, 결과: {:?}",
+            input,
+            doc
+        );
+        // 첫 번째 자식이 Heading이 아님을 확인
+        let first = &doc.children()[0];
+        assert!(
+            !first.is_heading(),
+            "Heading이면 안됨. 입력: {:?}, 결과: {:?}",
+            input,
+            first
+        );
     }
 }
