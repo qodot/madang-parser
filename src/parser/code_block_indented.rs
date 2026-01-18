@@ -78,21 +78,21 @@ mod tests {
         use crate::parse;
         use rstest::rstest;
 
-        // Indented Code Block 파싱 테스트 (CommonMark Example 107, 110, 111, 112, 116, 117, 118)
+        // === CommonMark Indented Code Block 예제 테스트 ===
         #[rstest]
-        // Example 107: 기본 코드 블록
+        // === Example 107: 기본 코드 블록 ===
         #[case("    a simple\n      indented code block", "a simple\n  indented code block")]
-        // Example 110: HTML/마크다운은 그대로 코드로 처리
+        // === Example 110: HTML/마크다운은 그대로 코드로 처리 ===
         #[case("    <a/>\n    *hi*\n\n    - one", "<a/>\n*hi*\n\n- one")]
-        // Example 111: 빈 줄로 분리된 청크들은 하나의 블록
+        // === Example 111: 빈 줄로 분리된 청크들은 하나의 블록 ===
         #[case("    chunk1\n\n    chunk2\n  \n \n \n    chunk3", "chunk1\n\nchunk2\n\n\n\nchunk3")]
-        // Example 112: 들여쓰기된 빈 줄 유지
+        // === Example 112: 들여쓰기된 빈 줄 유지 ===
         #[case("    chunk1\n      \n      chunk2", "chunk1\n  \n  chunk2")]
-        // Example 116: 8칸 들여쓰기 (4칸 제거 후 4칸 유지)
+        // === Example 116: 8칸 들여쓰기 (4칸 제거 후 4칸 유지) ===
         #[case("        foo\n    bar", "    foo\nbar")]
-        // Example 117: 앞뒤 빈 줄은 제거됨 (코드 시작 전 빈 줄, 후행 빈 줄)
+        // === Example 117: 앞뒤 빈 줄은 제거됨 ===
         #[case("\n    \n    foo\n    ", "foo")]
-        // Example 118: 후행 공백은 유지됨
+        // === Example 118: 후행 공백은 유지됨 ===
         #[case("    foo  ", "foo  ")]
         fn test_code_block_indented(#[case] input: &str, #[case] expected_content: &str) {
             let doc = parse(input);
@@ -107,7 +107,8 @@ mod tests {
             assert_eq!(content, expected_content, "input: {:?}", input);
         }
 
-        // Example 113: Paragraph 인터럽트 불가 (빈 줄 없이 4칸 들여쓰기는 Paragraph의 일부)
+        // === CommonMark Example 113: Paragraph 인터럽트 불가 ===
+        // 빈 줄 없이 4칸 들여쓰기는 Paragraph의 일부
         #[rstest]
         #[case("Foo\n    bar", "Foo\nbar")]
         fn test_cannot_interrupt_paragraph(#[case] input: &str, #[case] expected_text: &str) {
@@ -123,7 +124,7 @@ mod tests {
             assert_eq!(para_children[0].as_text(), expected_text);
         }
 
-        // Example 114: 코드 블록 후 4칸 미만 줄은 새 Paragraph
+        // === CommonMark Example 114: 코드 블록 후 4칸 미만 줄은 새 Paragraph ===
         #[rstest]
         #[case("    foo\nbar", "foo", "bar")]
         fn test_code_then_paragraph(
