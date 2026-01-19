@@ -57,140 +57,78 @@ fn strip_blockquote_markers(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::node::Node;
     use crate::parser::parse;
     use rstest::rstest;
 
-    /// 4칸 이상 들여쓰기는 Blockquote 아님 (code block)
+    /// 중첩 blockquote 헬퍼 함수
+    fn bq(depth: usize, inner: Node) -> Node {
+        let mut result = inner;
+        for _ in 0..depth {
+            result = Node::blockquote(vec![result]);
+        }
+        result
+    }
+
     #[rstest]
     // Example 231: 4칸 들여쓰기는 code block
-    #[case("    > # Foo")]
-    fn test_not_blockquote(#[case] input: &str) {
-        let doc = parse(input);
-        assert_eq!(doc.children().len(), 1);
-        assert!(doc.children()[0].is_code_block(), "입력: {}", input);
-    }
-
-    /// Example 244: Blockquote 내 복수 단락 테스트
-    #[rstest]
-    #[case("> foo\n>\n> bar", &["foo", "bar"])]
-    #[case("> line1\n>\n> line2", &["line1", "line2"])]
-    #[case("> a\n>\n> b\n>\n> c", &["a", "b", "c"])]
-    fn test_blockquote_multiple_paragraphs(#[case] input: &str, #[case] texts: &[&str]) {
-        let doc = parse(input);
-        assert_eq!(doc.children().len(), 1, "입력: {}", input);
-
-        let blockquote = &doc.children()[0];
-        assert!(blockquote.is_blockquote(), "입력: {}", input);
-        assert_eq!(blockquote.children().len(), texts.len(), "단락 수 불일치, 입력: {}", input);
-
-        for (i, text) in texts.iter().enumerate() {
-            let para = &blockquote.children()[i];
-            assert_eq!(para.children()[0].as_text(), *text, "단락 {}, 입력: {}", i, input);
-        }
-    }
-
-    /// 복수 블록 조합 테스트
-    /// is_blockquote: 각 자식이 blockquote인지 여부
-    #[rstest]
-    // Example 242: 빈 줄로 분리된 두 blockquote
-    #[case("> foo\n\n> bar", &[true, true])]
-    // Example 245: Paragraph 후 blockquote
-    #[case("foo\n> bar", &[false, true])]
-    // Example 248: Blockquote 후 빈 줄 + paragraph
-    #[case("> bar\n\nbaz", &[true, false])]
-    fn test_block_sequence(#[case] input: &str, #[case] is_blockquote: &[bool]) {
-        let doc = parse(input);
-        assert_eq!(doc.children().len(), is_blockquote.len(), "입력: {}", input);
-        for (i, expected_bq) in is_blockquote.iter().enumerate() {
-            assert_eq!(
-                doc.children()[i].is_blockquote(),
-                *expected_bq,
-                "자식 {}, 입력: {}",
-                i,
-                input
-            );
-        }
-    }
-
-    /// CommonMark Block Quote 예제 테스트
-    /// depth = None이면 Paragraph, Some(n)이면 n단계 중첩
-    #[rstest]
-    // Example 229: > 뒤 공백 없어도 OK
-    #[case(">hello", Some(1), "hello")]
-    #[case(">bar", Some(1), "bar")]
-    // Example 230: 1-3칸 들여쓰기 허용
-    #[case(" > hello", Some(1), "hello")]
-    #[case("  > hello", Some(1), "hello")]
-    #[case("   > hello", Some(1), "hello")]
-    // Example 232-233: Lazy continuation
-    #[case("> bar\nbaz", Some(1), "bar\nbaz")]
-    #[case("> bar\nbaz\n> foo", Some(1), "bar\nbaz\nfoo")]
-    // Example 243: 여러 줄 하나의 paragraph
-    #[case("> foo\n> bar", Some(1), "foo\nbar")]
-    // Example 247: Lazy continuation
-    #[case("> bar\nbaz", Some(1), "bar\nbaz")]
-    // Example 250: 중첩 blockquote + lazy continuation
-    #[case("> > > foo\nbar", Some(3), "foo\nbar")]
-    // 추가 케이스
-    #[case("> hello", Some(1), "hello")]
-    #[case(">  hello", Some(1), "hello")]
-    #[case("> 안녕하세요", Some(1), "안녕하세요")]
-    #[case("> > nested", Some(2), "nested")]
-    #[case("> > > deep", Some(3), "deep")]
-    #[case("> > > > 4단계", Some(4), "4단계")]
-    #[case("> a\n> b\n> c", Some(1), "a\nb\nc")]
-    #[case(">line1\n>line2", Some(1), "line1\nline2")]
-    #[case("> > a\n> > b", Some(2), "a\nb")]
-    #[case("> a\nb\nc", Some(1), "a\nb\nc")]
-    #[case("> start\n> middle\nend", Some(1), "start\nmiddle\nend")]
-    fn test_blockquote(#[case] input: &str, #[case] depth: Option<usize>, #[case] text: &str) {
-        let doc = parse(input);
-        assert_eq!(doc.children().len(), 1, "입력: {}", input);
-
-        match depth {
-            Some(d) => {
-                let mut current = &doc.children()[0];
-                for i in 0..d {
-                    assert!(current.is_blockquote(), "깊이 {}는 Blockquote여야 함, 입력: {}", i + 1, input);
-                    if i < d - 1 {
-                        current = &current.children()[0];
-                    }
-                }
-                let para = &current.children()[0];
-                assert_eq!(para.children()[0].as_text(), text, "입력: {}", input);
-            }
-            None => {
-                assert!(!doc.children()[0].is_blockquote(), "Blockquote가 아니어야 함, 입력: {}", input);
-                assert_eq!(doc.children()[0].children()[0].as_text(), text, "입력: {}", input);
-            }
-        }
-    }
-
-    /// Blockquote 내 다른 블록 요소 테스트
-    /// heading = Some((level, text)), is_hr = true면 ThematicBreak
-    #[rstest]
+    #[case("    > # Foo", vec![Node::code_block(None, "> # Foo")])]
     // Example 228: Blockquote 내 heading
-    #[case("> # Foo", Some((1, "Foo")), false)]
-    #[case("> # Title", Some((1, "Title")), false)]
-    #[case("> ## Subtitle", Some((2, "Subtitle")), false)]
-    #[case("> ---", None, true)]
-    #[case("> ***", None, true)]
-    fn test_blockquote_inner_blocks(
-        #[case] input: &str,
-        #[case] heading: Option<(u8, &str)>,
-        #[case] is_hr: bool,
-    ) {
+    #[case("> # Foo", vec![Node::blockquote(vec![Node::heading(1, vec![Node::text("Foo")])])])]
+    #[case("> # Title", vec![Node::blockquote(vec![Node::heading(1, vec![Node::text("Title")])])])]
+    #[case("> ## Subtitle", vec![Node::blockquote(vec![Node::heading(2, vec![Node::text("Subtitle")])])])]
+    // Example 228: Blockquote 내 thematic break
+    #[case("> ---", vec![Node::blockquote(vec![Node::ThematicBreak])])]
+    #[case("> ***", vec![Node::blockquote(vec![Node::ThematicBreak])])]
+    // Example 229: > 뒤 공백 없어도 OK
+    #[case(">hello", vec![Node::blockquote(vec![Node::para(vec![Node::text("hello")])])])]
+    #[case(">bar", vec![Node::blockquote(vec![Node::para(vec![Node::text("bar")])])])]
+    // Example 230: 1-3칸 들여쓰기 허용
+    #[case(" > hello", vec![Node::blockquote(vec![Node::para(vec![Node::text("hello")])])])]
+    #[case("  > hello", vec![Node::blockquote(vec![Node::para(vec![Node::text("hello")])])])]
+    #[case("   > hello", vec![Node::blockquote(vec![Node::para(vec![Node::text("hello")])])])]
+    // Example 232-233: Lazy continuation
+    #[case("> bar\nbaz", vec![Node::blockquote(vec![Node::para(vec![Node::text("bar\nbaz")])])])]
+    #[case("> bar\nbaz\n> foo", vec![Node::blockquote(vec![Node::para(vec![Node::text("bar\nbaz\nfoo")])])])]
+    // Example 242: 빈 줄로 분리된 두 blockquote
+    #[case("> foo\n\n> bar", vec![Node::blockquote(vec![Node::para(vec![Node::text("foo")])]), Node::blockquote(vec![Node::para(vec![Node::text("bar")])])])]
+    // Example 243: 여러 줄 하나의 paragraph
+    #[case("> foo\n> bar", vec![Node::blockquote(vec![Node::para(vec![Node::text("foo\nbar")])])])]
+    // Example 244: Blockquote 내 복수 단락
+    #[case("> foo\n>\n> bar", vec![Node::blockquote(vec![Node::para(vec![Node::text("foo")]), Node::para(vec![Node::text("bar")])])])]
+    #[case("> line1\n>\n> line2", vec![Node::blockquote(vec![Node::para(vec![Node::text("line1")]), Node::para(vec![Node::text("line2")])])])]
+    #[case("> a\n>\n> b\n>\n> c", vec![Node::blockquote(vec![Node::para(vec![Node::text("a")]), Node::para(vec![Node::text("b")]), Node::para(vec![Node::text("c")])])])]
+    // Example 245: Paragraph 후 blockquote
+    #[case("foo\n> bar", vec![Node::para(vec![Node::text("foo")]), Node::blockquote(vec![Node::para(vec![Node::text("bar")])])])]
+    // Example 247: Lazy continuation
+    #[case("> bar\nbaz", vec![Node::blockquote(vec![Node::para(vec![Node::text("bar\nbaz")])])])]
+    // Example 248: Blockquote 후 빈 줄 + paragraph
+    #[case("> bar\n\nbaz", vec![Node::blockquote(vec![Node::para(vec![Node::text("bar")])]), Node::para(vec![Node::text("baz")])])]
+    // 추가 케이스
+    #[case("> hello", vec![Node::blockquote(vec![Node::para(vec![Node::text("hello")])])])]
+    #[case(">  hello", vec![Node::blockquote(vec![Node::para(vec![Node::text("hello")])])])]
+    #[case("> 안녕하세요", vec![Node::blockquote(vec![Node::para(vec![Node::text("안녕하세요")])])])]
+    #[case("> a\n> b\n> c", vec![Node::blockquote(vec![Node::para(vec![Node::text("a\nb\nc")])])])]
+    #[case(">line1\n>line2", vec![Node::blockquote(vec![Node::para(vec![Node::text("line1\nline2")])])])]
+    #[case("> a\nb\nc", vec![Node::blockquote(vec![Node::para(vec![Node::text("a\nb\nc")])])])]
+    #[case("> start\n> middle\nend", vec![Node::blockquote(vec![Node::para(vec![Node::text("start\nmiddle\nend")])])])]
+    fn test_blockquote(#[case] input: &str, #[case] expected: Vec<Node>) {
         let doc = parse(input);
-        let blockquote = &doc.children()[0];
-        assert!(blockquote.is_blockquote(), "입력: {}", input);
+        assert_eq!(doc.children(), &expected);
+    }
 
-        let inner = &blockquote.children()[0];
-        if let Some((level, text)) = heading {
-            assert_eq!(inner.level(), level, "입력: {}", input);
-            assert_eq!(inner.children()[0].as_text(), text, "입력: {}", input);
-        }
-        if is_hr {
-            assert!(inner.is_thematic_break(), "입력: {}", input);
-        }
+    /// 중첩 blockquote 테스트
+    #[rstest]
+    // Example 250: 중첩 blockquote + lazy continuation
+    #[case("> > > foo\nbar", 3, "foo\nbar")]
+    // 추가 케이스
+    #[case("> > nested", 2, "nested")]
+    #[case("> > > deep", 3, "deep")]
+    #[case("> > > > 4단계", 4, "4단계")]
+    #[case("> > a\n> > b", 2, "a\nb")]
+    fn test_nested_blockquote(#[case] input: &str, #[case] depth: usize, #[case] text: &str) {
+        let doc = parse(input);
+        let expected = vec![bq(depth, Node::para(vec![Node::text(text)]))];
+        assert_eq!(doc.children(), &expected);
     }
 }

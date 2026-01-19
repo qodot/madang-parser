@@ -216,6 +216,11 @@ impl Node {
     pub fn heading(level: u8, children: Vec<Self>) -> Self {
         Node::Heading { level, children }
     }
+
+    #[cfg(test)]
+    pub fn blockquote(children: Vec<Self>) -> Self {
+        Node::Blockquote { children }
+    }
 }
 
 #[cfg(test)]
