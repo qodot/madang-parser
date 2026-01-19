@@ -45,9 +45,10 @@ pub fn try_start(line: &str, indent: usize) -> Result<HeadingSetextStartReason, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::node::Node;
     use rstest::rstest;
 
-    /// try_start 테스트: 유효/무효 케이스 통합
+    /// try_start 유닛 테스트
     #[rstest]
     // 유효한 밑줄: 레벨 1 (=)
     #[case("=", 0, Ok(SetextLevel::Level1))]
@@ -101,71 +102,47 @@ mod tests {
     /// Setext Heading 통합 테스트
     #[rstest]
     // Example 80: 기본 케이스
-    #[case("Foo\n===", 1, "Foo")]
-    #[case("Foo\n---", 2, "Foo")]
+    #[case("Foo\n===", vec![Node::heading(1, vec![Node::text("Foo")])])]
+    #[case("Foo\n---", vec![Node::heading(2, vec![Node::text("Foo")])])]
     // Example 81: 여러 줄 제목
-    #[case("Foo\nbar\n===", 1, "Foo\nbar")]
-    #[case("Foo\nbar\nbaz\n---", 2, "Foo\nbar\nbaz")]
+    #[case("Foo\nbar\n===", vec![Node::heading(1, vec![Node::text("Foo\nbar")])])]
+    #[case("Foo\nbar\nbaz\n---", vec![Node::heading(2, vec![Node::text("Foo\nbar\nbaz")])])]
     // Example 83: 다양한 밑줄 길이
-    #[case("Foo\n=", 1, "Foo")]
-    #[case("Foo\n-------------------------", 2, "Foo")]
-    #[case("Foo\n==========", 1, "Foo")]
+    #[case("Foo\n=", vec![Node::heading(1, vec![Node::text("Foo")])])]
+    #[case("Foo\n-------------------------", vec![Node::heading(2, vec![Node::text("Foo")])])]
+    #[case("Foo\n==========", vec![Node::heading(1, vec![Node::text("Foo")])])]
     // Example 84: 제목/밑줄 들여쓰기
-    #[case("   Foo\n---", 2, "Foo")]
-    #[case("  Foo\n-----", 2, "Foo")]
-    #[case("  Foo\n  ===", 1, "Foo")]
+    #[case("   Foo\n---", vec![Node::heading(2, vec![Node::text("Foo")])])]
+    #[case("  Foo\n-----", vec![Node::heading(2, vec![Node::text("Foo")])])]
+    #[case("  Foo\n  ===", vec![Node::heading(1, vec![Node::text("Foo")])])]
     // Example 86: 밑줄에 1-3칸 들여쓰기 허용
-    #[case("Foo\n   ----", 2, "Foo")]
-    #[case("Foo\n ===", 1, "Foo")]
-    #[case("Foo\n  ===", 1, "Foo")]
-    #[case("Foo\n   ===", 1, "Foo")]
-    #[case("Foo\n ---", 2, "Foo")]
+    #[case("Foo\n   ----", vec![Node::heading(2, vec![Node::text("Foo")])])]
+    #[case("Foo\n ===", vec![Node::heading(1, vec![Node::text("Foo")])])]
+    #[case("Foo\n  ===", vec![Node::heading(1, vec![Node::text("Foo")])])]
+    #[case("Foo\n   ===", vec![Node::heading(1, vec![Node::text("Foo")])])]
+    #[case("Foo\n ---", vec![Node::heading(2, vec![Node::text("Foo")])])]
     // Example 89: 제목 뒤 trailing spaces (trim됨)
-    #[case("Foo  \n-----", 2, "Foo")]
+    #[case("Foo  \n-----", vec![Node::heading(2, vec![Node::text("Foo")])])]
     // 추가 케이스
-    #[case("Foo\n-", 2, "Foo")]
-    #[case("Foo\n----------", 2, "Foo")]
-    #[case("Foo\n===   ", 1, "Foo")]
-    #[case("Foo\n---   ", 2, "Foo")]
-    #[case(" Foo\n===", 1, "Foo")]
-    #[case("  Foo\n===", 1, "Foo")]
-    fn test_setext_heading(#[case] input: &str, #[case] level: u8, #[case] content: &str) {
-        let doc = crate::parse(input);
-        assert_eq!(doc.children().len(), 1, "입력: {:?}", input);
-        let heading = &doc.children()[0];
-        assert!(heading.is_heading(), "Heading이 아님: {:?}", heading);
-        assert_eq!(heading.level(), level, "레벨 불일치: {:?}", input);
-        assert_eq!(heading.children()[0].as_text(), content, "내용 불일치: {:?}", input);
-    }
-
-    /// Setext Heading이 아닌 케이스 테스트
-    #[rstest]
-    // 밑줄에 4칸 이상 들여쓰기 → Setext 아님, Paragraph continuation
-    #[case("Foo\n    ===", 1)]
-    // 빈 줄 후 밑줄 → Setext 아님
-    #[case("Foo\n\n===", 2)]
+    #[case("Foo\n-", vec![Node::heading(2, vec![Node::text("Foo")])])]
+    #[case("Foo\n----------", vec![Node::heading(2, vec![Node::text("Foo")])])]
+    #[case("Foo\n===   ", vec![Node::heading(1, vec![Node::text("Foo")])])]
+    #[case("Foo\n---   ", vec![Node::heading(2, vec![Node::text("Foo")])])]
+    #[case(" Foo\n===", vec![Node::heading(1, vec![Node::text("Foo")])])]
+    #[case("  Foo\n===", vec![Node::heading(1, vec![Node::text("Foo")])])]
+    // Setext Heading이 아닌 케이스
+    // 밑줄에 4칸 이상 들여쓰기 → Paragraph continuation
+    #[case("Foo\n    ===", vec![Node::para(vec![Node::text("Foo\n===")])])]
+    // 빈 줄 후 밑줄 → 두 개의 Paragraph
+    #[case("Foo\n\n===", vec![Node::para(vec![Node::text("Foo")]), Node::para(vec![Node::text("===")])])]
     // 밑줄만 단독 (=) → Paragraph
-    #[case("===", 1)]
+    #[case("===", vec![Node::para(vec![Node::text("===")])])]
     // 밑줄만 단독 (-) → Thematic Break
-    #[case("---", 1)]
-    // 밑줄 뒤 비공백 문자 → Setext 아님, Paragraph continuation
-    #[case("Foo\n=== bar", 1)]
-    fn test_not_setext_heading(#[case] input: &str, #[case] expected_children: usize) {
+    #[case("---", vec![Node::ThematicBreak])]
+    // 밑줄 뒤 비공백 문자 → Paragraph continuation
+    #[case("Foo\n=== bar", vec![Node::para(vec![Node::text("Foo\n=== bar")])])]
+    fn test_setext_heading(#[case] input: &str, #[case] expected: Vec<Node>) {
         let doc = crate::parse(input);
-        assert_eq!(
-            doc.children().len(),
-            expected_children,
-            "자식 개수 불일치. 입력: {:?}, 결과: {:?}",
-            input,
-            doc
-        );
-        // 첫 번째 자식이 Heading이 아님을 확인
-        let first = &doc.children()[0];
-        assert!(
-            !first.is_heading(),
-            "Heading이면 안됨. 입력: {:?}, 결과: {:?}",
-            input,
-            first
-        );
+        assert_eq!(doc.children(), &expected);
     }
 }
