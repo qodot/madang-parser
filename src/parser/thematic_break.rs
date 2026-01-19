@@ -49,58 +49,56 @@ fn is_thematic_break(s: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::node::Node;
     use crate::parser::parse;
     use rstest::rstest;
 
-    /// Thematic Break 테스트
-    /// is_break = true면 ThematicBreak, false면 Paragraph
     #[rstest]
     // Example 43: 기본 케이스
-    #[case("***", true)]
-    #[case("---", true)]
-    #[case("___", true)]
-    // Example 44-45: 유효하지 않은 마커 문자
-    #[case("+++", false)]
-    #[case("===", false)]
-    // Example 46: 2개는 부족
-    #[case("**", false)]
-    #[case("--", false)]
-    #[case("__", false)]
+    #[case("***", vec![Node::ThematicBreak])]
+    #[case("---", vec![Node::ThematicBreak])]
+    #[case("___", vec![Node::ThematicBreak])]
+    // Example 44-45: 유효하지 않은 마커 문자 → Paragraph
+    #[case("+++", vec![Node::para(vec![Node::text("+++")])])]
+    #[case("===", vec![Node::para(vec![Node::text("===")])])]
+    // Example 46: 2개는 부족 → Paragraph
+    #[case("**", vec![Node::para(vec![Node::text("**")])])]
+    #[case("--", vec![Node::para(vec![Node::text("--")])])]
+    #[case("__", vec![Node::para(vec![Node::text("__")])])]
     // Example 47: 1-3칸 들여쓰기 허용
-    #[case(" ***", true)]
-    #[case("  ***", true)]
-    #[case("   ***", true)]
+    #[case(" ***", vec![Node::ThematicBreak])]
+    #[case("  ***", vec![Node::ThematicBreak])]
+    #[case("   ***", vec![Node::ThematicBreak])]
     // Example 48: 4칸 들여쓰기는 코드 블록
-    #[case("    ***", false)]
+    #[case("    ***", vec![Node::code_block(None, "***")])]
     // Example 50: 많은 문자
-    #[case("_____________________________________", true)]
+    #[case("_____________________________________", vec![Node::ThematicBreak])]
     // Example 51: 공백 사이
-    #[case(" - - -", true)]
+    #[case(" - - -", vec![Node::ThematicBreak])]
     // Example 52: 복잡한 공백 패턴
-    #[case(" **  * ** * ** * **", true)]
+    #[case(" **  * ** * ** * **", vec![Node::ThematicBreak])]
     // Example 53: 많은 공백
-    #[case("-     -      -      -", true)]
+    #[case("-     -      -      -", vec![Node::ThematicBreak])]
     // Example 54: 끝 공백
-    #[case("- - - -    ", true)]
-    // Example 55: 다른 문자 포함 시 무효
-    #[case("_ _ _ _ a", false)]
-    #[case("a------", false)]
-    #[case("---a---", false)]
-    // Example 56: 혼합 문자는 무효
-    #[case("*-*", false)]
+    #[case("- - - -    ", vec![Node::ThematicBreak])]
+    // Example 55: 다른 문자 포함 시 무효 → Paragraph
+    #[case("_ _ _ _ a", vec![Node::para(vec![Node::text("_ _ _ _ a")])])]
+    #[case("a------", vec![Node::para(vec![Node::text("a------")])])]
+    #[case("---a---", vec![Node::para(vec![Node::text("---a---")])])]
+    // Example 56: 혼합 문자는 무효 → Paragraph
+    #[case("*-*", vec![Node::para(vec![Node::text("*-*")])])]
     // 추가 케이스
-    #[case("*****", true)]
-    #[case("----------", true)]
-    #[case("* * *", true)]
-    #[case("- - -", true)]
-    #[case("_  _  _", true)]
-    #[case("  ---", true)]
-    #[case("   ___", true)]
-    #[case("***   ", true)]
-    #[case("***a", false)]
-    fn test_thematic_break(#[case] input: &str, #[case] is_break: bool) {
+    #[case("*****", vec![Node::ThematicBreak])]
+    #[case("----------", vec![Node::ThematicBreak])]
+    #[case("* * *", vec![Node::ThematicBreak])]
+    #[case("- - -", vec![Node::ThematicBreak])]
+    #[case("_  _  _", vec![Node::ThematicBreak])]
+    #[case("  ---", vec![Node::ThematicBreak])]
+    #[case("   ___", vec![Node::ThematicBreak])]
+    #[case("***   ", vec![Node::ThematicBreak])]
+    #[case("***a", vec![Node::para(vec![Node::text("***a")])])]
+    fn test_thematic_break(#[case] input: &str, #[case] expected: Vec<Node>) {
         let doc = parse(input);
-        assert_eq!(doc.children().len(), 1, "입력: {}", input);
-        assert_eq!(doc.children()[0].is_thematic_break(), is_break, "입력: {}", input);
+        assert_eq!(doc.children(), &expected);
     }
 }

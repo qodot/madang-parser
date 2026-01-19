@@ -203,6 +203,14 @@ impl Node {
             children,
         }
     }
+
+    #[cfg(test)]
+    pub fn code_block(info: Option<&str>, content: &str) -> Self {
+        Node::CodeBlock {
+            info: info.map(|s| s.to_string()),
+            content: content.to_string(),
+        }
+    }
 }
 
 #[cfg(test)]
