@@ -1,3 +1,22 @@
+/// Inline 요소 인터페이스
+/// Text, CodeSpan, Emphasis, Strong, Link, Image 등
+pub trait Inline {}
+
+/// Block 요소 인터페이스 (모든 블록의 기본)
+pub trait Block {}
+
+/// Container Block 인터페이스
+/// 다른 블록을 children으로 포함할 수 있는 블록
+/// Document, Blockquote, List, ListItem
+pub trait ContainerBlock: Block {
+    fn children(&self) -> &Vec<Node>;
+}
+
+/// Leaf Block 인터페이스
+/// 다른 블록을 포함할 수 없는 블록
+/// ThematicBreak, Heading, CodeBlock, Paragraph
+pub trait LeafBlock: Block {}
+
 /// 리스트 타입
 #[derive(Debug, Clone, PartialEq)]
 pub enum ListType {
@@ -10,6 +29,14 @@ pub enum ListType {
     },
 }
 
+/// CommonMark 노드
+///
+/// ## Block 분류
+/// - **Container Blocks**: Document, Blockquote, List, ListItem
+/// - **Leaf Blocks**: ThematicBreak, Heading, CodeBlock, Paragraph
+///
+/// ## Inline 분류
+/// - Text (향후: CodeSpan, Emphasis, Strong, Link, Image 등)
 #[derive(Debug, PartialEq)]
 pub enum Node {
     Document { children: Vec<Node> },
@@ -32,6 +59,51 @@ pub enum Node {
     /// 리스트 아이템
     ListItem { children: Vec<Node> },
     Text(String),
+}
+
+/// Node에 대한 Block trait 구현
+/// Container Block과 Leaf Block 모두 Block
+impl Block for Node {}
+
+/// Node에 대한 Inline trait 구현
+/// Text variant만 해당
+impl Inline for Node {}
+
+impl Node {
+    /// Container Block인지 확인
+    /// Document, Blockquote, List, ListItem
+    pub fn is_container_block(&self) -> bool {
+        matches!(
+            self,
+            Node::Document { .. }
+                | Node::Blockquote { .. }
+                | Node::List { .. }
+                | Node::ListItem { .. }
+        )
+    }
+
+    /// Leaf Block인지 확인
+    /// ThematicBreak, Heading, CodeBlock, Paragraph
+    pub fn is_leaf_block(&self) -> bool {
+        matches!(
+            self,
+            Node::ThematicBreak
+                | Node::Heading { .. }
+                | Node::CodeBlock { .. }
+                | Node::Paragraph { .. }
+        )
+    }
+
+    /// Block인지 확인 (Container 또는 Leaf)
+    pub fn is_block(&self) -> bool {
+        self.is_container_block() || self.is_leaf_block()
+    }
+
+    /// Inline인지 확인
+    /// Text (향후: CodeSpan, Emphasis, Strong, Link, Image 등)
+    pub fn is_inline(&self) -> bool {
+        matches!(self, Node::Text(_))
+    }
 }
 
 impl Node {
@@ -226,6 +298,7 @@ impl Node {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn create_empty_document() {
@@ -270,5 +343,32 @@ mod tests {
 
         assert_eq!(heading.level(), 2);
         assert_eq!(heading.children()[0].as_text(), "제목");
+    }
+
+    /// 노드 분류 테스트 (is_container_block, is_leaf_block, is_block, is_inline)
+    #[rstest]
+    // Container Blocks
+    #[case(Node::Document { children: vec![] }, true, false, true, false)]
+    #[case(Node::Blockquote { children: vec![] }, true, false, true, false)]
+    #[case(Node::List { list_type: ListType::Bullet, start: 1, tight: true, children: vec![] }, true, false, true, false)]
+    #[case(Node::ListItem { children: vec![] }, true, false, true, false)]
+    // Leaf Blocks
+    #[case(Node::ThematicBreak, false, true, true, false)]
+    #[case(Node::Heading { level: 1, children: vec![] }, false, true, true, false)]
+    #[case(Node::CodeBlock { info: None, content: String::new() }, false, true, true, false)]
+    #[case(Node::Paragraph { children: vec![] }, false, true, true, false)]
+    // Inline
+    #[case(Node::Text(String::new()), false, false, false, true)]
+    fn test_node_classification(
+        #[case] node: Node,
+        #[case] is_container: bool,
+        #[case] is_leaf: bool,
+        #[case] is_block: bool,
+        #[case] is_inline: bool,
+    ) {
+        assert_eq!(node.is_container_block(), is_container);
+        assert_eq!(node.is_leaf_block(), is_leaf);
+        assert_eq!(node.is_block(), is_block);
+        assert_eq!(node.is_inline(), is_inline);
     }
 }
