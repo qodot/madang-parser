@@ -122,6 +122,7 @@ pub fn parse(text: &str, _indent: usize) -> Option<Node> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::node::Node;
     use rstest::rstest;
 
     /// try_start 테스트
@@ -215,64 +216,46 @@ mod tests {
         }
     }
 
-    /// parse 테스트 (CommonMark Example 기반)
+    /// Fenced Code Block 통합 테스트 (CommonMark Example 기반)
     #[rstest]
     // Example 119-120: 기본 백틱/틸드 펜스
-    #[case("```\ncode\n```", Some(("code", None)))]
-    #[case("~~~\ncode\n~~~", Some(("code", None)))]
-    #[case("```\nline1\nline2\n```", Some(("line1\nline2", None)))]
-    // Example 121: 백틱/틸드 2개는 펜스 아님
-    #[case("``\ncode\n``", None)]
-    #[case("~~\ncode\n~~", None)]
-    #[case("code", None)]
+    #[case("```\ncode\n```", vec![Node::code_block(None, "code")])]
+    #[case("~~~\ncode\n~~~", vec![Node::code_block(None, "code")])]
+    #[case("```\nline1\nline2\n```", vec![Node::code_block(None, "line1\nline2")])]
     // Example 122-123: 다른 문자 펜스는 닫히지 않음
-    #[case("~~~\ncode\n```", Some(("code\n```", None)))]
-    #[case("```\ncode\n~~~", Some(("code\n~~~", None)))]
+    #[case("~~~\ncode\n```", vec![Node::code_block(None, "code\n```")])]
+    #[case("```\ncode\n~~~", vec![Node::code_block(None, "code\n~~~")])]
     // Example 124-125: 닫는 펜스가 더 길어도 OK
-    #[case("`````\ncode\n`````", Some(("code", None)))]
-    #[case("```\ncode\n`````", Some(("code", None)))]
-    #[case("~~~~~\ncode\n~~~~~", Some(("code", None)))]
+    #[case("`````\ncode\n`````", vec![Node::code_block(None, "code")])]
+    #[case("```\ncode\n`````", vec![Node::code_block(None, "code")])]
+    #[case("~~~~~\ncode\n~~~~~", vec![Node::code_block(None, "code")])]
     // Example 126, 130: 빈 내용
-    #[case("```\n\n```", Some(("", None)))]
+    #[case("```\n\n```", vec![Node::code_block(None, "")])]
     // Example 127: 닫는 펜스 없음 → EOF까지
-    #[case("```\ncode", Some(("code", None)))]
-    #[case("```rust\ncode", Some(("code", Some("rust"))))]
-    #[case("```\nline1\nline2", Some(("line1\nline2", None)))]
-    #[case("~~~\ncode", Some(("code", None)))]
+    #[case("```\ncode", vec![Node::code_block(None, "code")])]
+    #[case("```rust\ncode", vec![Node::code_block(Some("rust"), "code")])]
+    #[case("```\nline1\nline2", vec![Node::code_block(None, "line1\nline2")])]
+    #[case("~~~\ncode", vec![Node::code_block(None, "code")])]
     // Example 131-133: 여는 펜스 들여쓰기 처리
-    #[case("  ```\n  code\n  ```", Some(("code", None)))]
-    #[case("   ```\n   code\n   ```", Some(("code", None)))]
-    #[case("  ```\n    code\n  ```", Some(("  code", None)))]
-    #[case("  ```\ncode\n  ```", Some(("code", None)))]
-    // Example 134: 4칸 들여쓰기 → indented code block
-    #[case("    ```\ncode\n```", None)]
+    #[case("  ```\n  code\n  ```", vec![Node::code_block(None, "code")])]
+    #[case("   ```\n   code\n   ```", vec![Node::code_block(None, "code")])]
+    #[case("  ```\n    code\n  ```", vec![Node::code_block(None, "  code")])]
+    #[case("  ```\ncode\n  ```", vec![Node::code_block(None, "code")])]
     // Example 139: 닫는 펜스가 짧으면 무효
-    #[case("`````\ncode\n```", Some(("code\n```", None)))]
-    #[case("~~~~~\ncode\n~~~", Some(("code\n~~~", None)))]
+    #[case("`````\ncode\n```", vec![Node::code_block(None, "code\n```")])]
+    #[case("~~~~~\ncode\n~~~", vec![Node::code_block(None, "code\n~~~")])]
     // Example 142-143: info string
-    #[case("```rust\ncode\n```", Some(("code", Some("rust"))))]
-    #[case("``` rust \ncode\n```", Some(("code", Some("rust"))))]
-    #[case("```rust python\ncode\n```", Some(("code", Some("rust python"))))]
-    #[case("~~~rust\ncode\n~~~", Some(("code", Some("rust"))))]
+    #[case("```rust\ncode\n```", vec![Node::code_block(Some("rust"), "code")])]
+    #[case("``` rust \ncode\n```", vec![Node::code_block(Some("rust"), "code")])]
+    #[case("```rust python\ncode\n```", vec![Node::code_block(Some("rust python"), "code")])]
+    #[case("~~~rust\ncode\n~~~", vec![Node::code_block(Some("rust"), "code")])]
     // Example 144: 특수 문자 info string
-    #[case("````;\n````", Some(("", Some(";"))))]
+    #[case("````;\n````", vec![Node::code_block(Some(";"), "")])]
     // 추가: 빈 줄 포함
-    #[case("```\nline1\n\nline2\n```", Some(("line1\n\nline2", None)))]
-    #[case("```rust\nfn main() {\n\n    println!(\"hi\");\n}\n```", Some(("fn main() {\n\n    println!(\"hi\");\n}", Some("rust"))))]
-    fn code_block_fenced(#[case] input: &str, #[case] expected: Option<(&str, Option<&str>)>) {
-        let result = parse(input, 0);
-
-        match expected {
-            Some((content, info)) => {
-                assert!(result.is_some(), "파싱 실패: {}", input);
-                let node = result.unwrap();
-                assert!(node.is_code_block(), "CodeBlock이 아님");
-                assert_eq!(node.content(), content);
-                assert_eq!(node.info(), info);
-            }
-            None => {
-                assert!(result.is_none(), "펜스가 아닌데 파싱됨: {}", input);
-            }
-        }
+    #[case("```\nline1\n\nline2\n```", vec![Node::code_block(None, "line1\n\nline2")])]
+    #[case("```rust\nfn main() {\n\n    println!(\"hi\");\n}\n```", vec![Node::code_block(Some("rust"), "fn main() {\n\n    println!(\"hi\");\n}")])]
+    fn test_code_block_fenced(#[case] input: &str, #[case] expected: Vec<Node>) {
+        let doc = crate::parse(input);
+        assert_eq!(doc.children(), &expected);
     }
 }
