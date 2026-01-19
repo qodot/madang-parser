@@ -33,6 +33,7 @@ pub(crate) fn try_start(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::node::Node;
     use rstest::rstest;
 
     /// try_start 테스트: 성공/실패 케이스 통합
@@ -68,82 +69,28 @@ mod tests {
         }
     }
 
-    /// 통합 테스트: CommonMark 명세 예제 기반
-    mod integration {
-        use crate::node::Node;
-        use crate::parse;
-        use rstest::rstest;
-
-        /// CommonMark Indented Code Block 예제 테스트
-        #[rstest]
-        // Example 107: 기본 코드 블록
-        #[case("    a simple\n      indented code block", "a simple\n  indented code block")]
-        // Example 110: HTML/마크다운은 그대로 코드로 처리
-        #[case("    <a/>\n    *hi*\n\n    - one", "<a/>\n*hi*\n\n- one")]
-        // Example 111: 빈 줄로 분리된 청크들은 하나의 블록
-        #[case("    chunk1\n\n    chunk2\n  \n \n \n    chunk3", "chunk1\n\nchunk2\n\n\n\nchunk3")]
-        // Example 112: 들여쓰기된 빈 줄 유지
-        #[case("    chunk1\n      \n      chunk2", "chunk1\n  \n  chunk2")]
-        // Example 116: 8칸 들여쓰기 (4칸 제거 후 4칸 유지)
-        #[case("        foo\n    bar", "    foo\nbar")]
-        // Example 117: 앞뒤 빈 줄은 제거됨
-        #[case("\n    \n    foo\n    ", "foo")]
-        // Example 118: 후행 공백은 유지됨
-        #[case("    foo  ", "foo  ")]
-        fn test_code_block_indented(#[case] input: &str, #[case] expected_content: &str) {
-            let doc = parse(input);
-            let Node::Document { children } = doc else {
-                panic!("expected Document");
-            };
-            assert_eq!(children.len(), 1, "children: {:?}", children);
-            let Node::CodeBlock { info, content } = &children[0] else {
-                panic!("expected CodeBlock, got {:?}", children[0]);
-            };
-            assert_eq!(*info, None);
-            assert_eq!(content, expected_content, "input: {:?}", input);
-        }
-
-        /// Example 113: Paragraph 인터럽트 불가
-        /// 빈 줄 없이 4칸 들여쓰기는 Paragraph의 일부
-        #[rstest]
-        #[case("Foo\n    bar", "Foo\nbar")]
-        fn test_cannot_interrupt_paragraph(#[case] input: &str, #[case] expected_text: &str) {
-            let doc = parse(input);
-            let Node::Document { children } = doc else {
-                panic!("expected Document");
-            };
-            assert_eq!(children.len(), 1, "children: {:?}", children);
-            let Node::Paragraph { children: para_children } = &children[0] else {
-                panic!("expected Paragraph, got {:?}", children[0]);
-            };
-            assert_eq!(para_children.len(), 1);
-            assert_eq!(para_children[0].as_text(), expected_text);
-        }
-
-        /// Example 114: 코드 블록 후 4칸 미만 줄은 새 Paragraph
-        #[rstest]
-        #[case("    foo\nbar", "foo", "bar")]
-        fn test_code_then_paragraph(
-            #[case] input: &str,
-            #[case] code_content: &str,
-            #[case] para_text: &str,
-        ) {
-            let doc = parse(input);
-            let Node::Document { children } = doc else {
-                panic!("expected Document");
-            };
-            assert_eq!(children.len(), 2, "children: {:?}", children);
-            // 첫 번째: CodeBlock
-            let Node::CodeBlock { info, content } = &children[0] else {
-                panic!("expected CodeBlock, got {:?}", children[0]);
-            };
-            assert_eq!(*info, None);
-            assert_eq!(content, code_content);
-            // 두 번째: Paragraph
-            let Node::Paragraph { children: para_children } = &children[1] else {
-                panic!("expected Paragraph, got {:?}", children[1]);
-            };
-            assert_eq!(para_children[0].as_text(), para_text);
-        }
+    /// Indented Code Block 통합 테스트 (CommonMark 명세 기반)
+    #[rstest]
+    // Example 107: 기본 코드 블록
+    #[case("    a simple\n      indented code block", vec![Node::code_block(None, "a simple\n  indented code block")])]
+    // Example 110: HTML/마크다운은 그대로 코드로 처리
+    #[case("    <a/>\n    *hi*\n\n    - one", vec![Node::code_block(None, "<a/>\n*hi*\n\n- one")])]
+    // Example 111: 빈 줄로 분리된 청크들은 하나의 블록
+    #[case("    chunk1\n\n    chunk2\n  \n \n \n    chunk3", vec![Node::code_block(None, "chunk1\n\nchunk2\n\n\n\nchunk3")])]
+    // Example 112: 들여쓰기된 빈 줄 유지
+    #[case("    chunk1\n      \n      chunk2", vec![Node::code_block(None, "chunk1\n  \n  chunk2")])]
+    // Example 113: Paragraph 인터럽트 불가 - 빈 줄 없이 4칸 들여쓰기는 Paragraph 일부
+    #[case("Foo\n    bar", vec![Node::para(vec![Node::text("Foo\nbar")])])]
+    // Example 114: 코드 블록 후 4칸 미만 줄은 새 Paragraph
+    #[case("    foo\nbar", vec![Node::code_block(None, "foo"), Node::para(vec![Node::text("bar")])])]
+    // Example 116: 8칸 들여쓰기 (4칸 제거 후 4칸 유지)
+    #[case("        foo\n    bar", vec![Node::code_block(None, "    foo\nbar")])]
+    // Example 117: 앞뒤 빈 줄은 제거됨
+    #[case("\n    \n    foo\n    ", vec![Node::code_block(None, "foo")])]
+    // Example 118: 후행 공백은 유지됨
+    #[case("    foo  ", vec![Node::code_block(None, "foo  ")])]
+    fn test_code_block_indented(#[case] input: &str, #[case] expected: Vec<Node>) {
+        let doc = crate::parse(input);
+        assert_eq!(doc.children(), &expected);
     }
 }
