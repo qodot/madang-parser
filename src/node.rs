@@ -211,6 +211,11 @@ impl Node {
             content: content.to_string(),
         }
     }
+
+    #[cfg(test)]
+    pub fn heading(level: u8, children: Vec<Self>) -> Self {
+        Node::Heading { level, children }
+    }
 }
 
 #[cfg(test)]

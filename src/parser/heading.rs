@@ -70,65 +70,60 @@ fn strip_closing_hashes(s: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
+    use crate::node::Node;
     use crate::parser::parse;
     use rstest::rstest;
 
-    /// ATX Heading 테스트
-    /// level = None이면 Paragraph, Some(n)이면 Heading
     #[rstest]
     // Example 62: 모든 레벨 h1-h6
-    #[case("# foo", Some(1), "foo")]
-    #[case("## foo", Some(2), "foo")]
-    #[case("### foo", Some(3), "foo")]
-    #[case("#### foo", Some(4), "foo")]
-    #[case("##### foo", Some(5), "foo")]
-    #[case("###### foo", Some(6), "foo")]
-    // Example 63: 7개 이상 #
-    #[case("####### foo", None, "####### foo")]
-    // Example 64: # 뒤 공백 없음
-    #[case("#5 bolt", None, "#5 bolt")]
-    #[case("#hashtag", None, "#hashtag")]
+    #[case("# foo", vec![Node::heading(1, vec![Node::text("foo")])])]
+    #[case("## foo", vec![Node::heading(2, vec![Node::text("foo")])])]
+    #[case("### foo", vec![Node::heading(3, vec![Node::text("foo")])])]
+    #[case("#### foo", vec![Node::heading(4, vec![Node::text("foo")])])]
+    #[case("##### foo", vec![Node::heading(5, vec![Node::text("foo")])])]
+    #[case("###### foo", vec![Node::heading(6, vec![Node::text("foo")])])]
+    // Example 63: 7개 이상 # → Paragraph
+    #[case("####### foo", vec![Node::para(vec![Node::text("####### foo")])])]
+    // Example 64: # 뒤 공백 없음 → Paragraph
+    #[case("#5 bolt", vec![Node::para(vec![Node::text("#5 bolt")])])]
+    #[case("#hashtag", vec![Node::para(vec![Node::text("#hashtag")])])]
     // Example 67: # 뒤 여러 공백
-    #[case("#                  foo", Some(1), "foo")]
+    #[case("#                  foo", vec![Node::heading(1, vec![Node::text("foo")])])]
     // Example 68: 1-3칸 들여쓰기 허용
-    #[case(" ### foo", Some(3), "foo")]
-    #[case("  ## foo", Some(2), "foo")]
-    #[case("   # foo", Some(1), "foo")]
+    #[case(" ### foo", vec![Node::heading(3, vec![Node::text("foo")])])]
+    #[case("  ## foo", vec![Node::heading(2, vec![Node::text("foo")])])]
+    #[case("   # foo", vec![Node::heading(1, vec![Node::text("foo")])])]
     // Example 71: 닫는 # 시퀀스
-    #[case("## foo ##", Some(2), "foo")]
-    #[case("  ###   bar    ###", Some(3), "bar")]
+    #[case("## foo ##", vec![Node::heading(2, vec![Node::text("foo")])])]
+    #[case("  ###   bar    ###", vec![Node::heading(3, vec![Node::text("bar")])])]
     // Example 72: 많은 닫는 #
-    #[case("# foo ##################################", Some(1), "foo")]
-    #[case("##### foo ##", Some(5), "foo")]
+    #[case("# foo ##################################", vec![Node::heading(1, vec![Node::text("foo")])])]
+    #[case("##### foo ##", vec![Node::heading(5, vec![Node::text("foo")])])]
     // Example 73: 닫는 # 뒤 공백
-    #[case("### foo ###     ", Some(3), "foo")]
+    #[case("### foo ###     ", vec![Node::heading(3, vec![Node::text("foo")])])]
     // Example 74: 닫는 # 뒤 텍스트
-    #[case("### foo ### b", Some(3), "foo ### b")]
+    #[case("### foo ### b", vec![Node::heading(3, vec![Node::text("foo ### b")])])]
     // Example 75: # 앞 공백 없음
-    #[case("# foo#", Some(1), "foo#")]
+    #[case("# foo#", vec![Node::heading(1, vec![Node::text("foo#")])])]
     // Example 79: 빈 heading
-    #[case("##", Some(2), "")]
-    #[case("#", Some(1), "")]
-    #[case("### ###", Some(3), "")]
+    #[case("##", vec![Node::heading(2, vec![Node::text("")])])]
+    #[case("#", vec![Node::heading(1, vec![Node::text("")])])]
+    #[case("### ###", vec![Node::heading(3, vec![Node::text("")])])]
     // 추가 케이스
-    #[case("# heading", Some(1), "heading")]
-    #[case("###### h6 title", Some(6), "h6 title")]
-    #[case("# ", Some(1), "")]
-    #[case("## a ## b", Some(2), "a ## b")]
-    #[case("#\tfoo", Some(1), "foo")]
-    #[case("# foo\t#", Some(1), "foo")]
-    #[case(" # foo", Some(1), "foo")]
-    #[case("#    foo", Some(1), "foo")]
-    #[case("# foo   bar", Some(1), "foo   bar")]
-    #[case("# 안녕하세요", Some(1), "안녕하세요")]
-    #[case("## 🎉 축하합니다", Some(2), "🎉 축하합니다")]
-    #[case("#no_space", None, "#no_space")]
-    fn test_heading(#[case] input: &str, #[case] level: Option<u8>, #[case] text: &str) {
+    #[case("# heading", vec![Node::heading(1, vec![Node::text("heading")])])]
+    #[case("###### h6 title", vec![Node::heading(6, vec![Node::text("h6 title")])])]
+    #[case("# ", vec![Node::heading(1, vec![Node::text("")])])]
+    #[case("## a ## b", vec![Node::heading(2, vec![Node::text("a ## b")])])]
+    #[case("#\tfoo", vec![Node::heading(1, vec![Node::text("foo")])])]
+    #[case("# foo\t#", vec![Node::heading(1, vec![Node::text("foo")])])]
+    #[case(" # foo", vec![Node::heading(1, vec![Node::text("foo")])])]
+    #[case("#    foo", vec![Node::heading(1, vec![Node::text("foo")])])]
+    #[case("# foo   bar", vec![Node::heading(1, vec![Node::text("foo   bar")])])]
+    #[case("# 안녕하세요", vec![Node::heading(1, vec![Node::text("안녕하세요")])])]
+    #[case("## 🎉 축하합니다", vec![Node::heading(2, vec![Node::text("🎉 축하합니다")])])]
+    #[case("#no_space", vec![Node::para(vec![Node::text("#no_space")])])]
+    fn test_heading(#[case] input: &str, #[case] expected: Vec<Node>) {
         let doc = parse(input);
-        assert_eq!(doc.children().len(), 1, "입력: {}", input);
-        if let Some(lvl) = level {
-            assert_eq!(doc.children()[0].level(), lvl, "입력: {}", input);
-        }
-        assert_eq!(doc.children()[0].children()[0].as_text(), text, "입력: {}", input);
+        assert_eq!(doc.children(), &expected);
     }
 }
