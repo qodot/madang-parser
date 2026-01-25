@@ -1,6 +1,4 @@
-//! Blockquote 파싱
-//!
-//! CommonMark 명세: https://spec.commonmark.org/0.31.2/#block-quotes
+//! https://spec.commonmark.org/0.31.2/#block-quotes
 
 use super::helpers::calculate_indent;
 use crate::node::{BlockNode, BlockquoteNode};
@@ -13,8 +11,6 @@ pub enum BlockquoteErr {
     NotBlockquoteMarker,
 }
 
-/// Blockquote 라인 파싱 - 마커 검증 및 내용 추출
-/// 성공하면 Ok(마커 제거된 내용), 실패하면 Err(사유)
 pub fn parse(line: &str) -> Result<String, BlockquoteErr> {
     let indent = calculate_indent(line);
     let trimmed = line.trim();
@@ -40,8 +36,6 @@ pub fn parse(line: &str) -> Result<String, BlockquoteErr> {
     Ok(content.to_string())
 }
 
-/// 축적된 내용으로 Blockquote 노드 생성
-/// contents: 각 라인에서 > 마커 제거된 내용들
 pub fn finalize<F>(contents: Vec<String>, parse_block: F) -> BlockNode
 where
     F: Fn(&str) -> BlockNode,
@@ -58,8 +52,6 @@ where
     BlockNode::Blockquote(BlockquoteNode::new(children))
 }
 
-/// 여러 줄 텍스트를 Blockquote로 파싱 (중첩 blockquote용)
-/// 첫 줄이 blockquote가 아니면 None 반환
 pub fn parse_text<F>(text: &str, parse_block: F) -> Option<BlockNode>
 where
     F: Fn(&str) -> BlockNode,
@@ -97,11 +89,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::node::{BlockNode, InlineNode};
+    use crate::node::{BlockNode, InlineNode, ListItemNode};
     use crate::parser::parse;
     use rstest::rstest;
 
-    /// 중첩 blockquote 헬퍼 함수
     fn bq(depth: usize, inner: BlockNode) -> BlockNode {
         let mut result = inner;
         for _ in 0..depth {
@@ -111,8 +102,6 @@ mod tests {
     }
 
     #[rstest]
-    // Example 231: 4칸 들여쓰기는 code block
-    #[case("    > # Foo", vec![BlockNode::code_block(None, "> # Foo")])]
     // Example 228: Blockquote 내 heading
     #[case("> # Foo", vec![BlockNode::blockquote(vec![BlockNode::heading(1, vec![InlineNode::text("Foo")])])])]
     #[case("> # Title", vec![BlockNode::blockquote(vec![BlockNode::heading(1, vec![InlineNode::text("Title")])])])]
@@ -127,9 +116,21 @@ mod tests {
     #[case(" > hello", vec![BlockNode::blockquote(vec![BlockNode::paragraph(vec![InlineNode::text("hello")])])])]
     #[case("  > hello", vec![BlockNode::blockquote(vec![BlockNode::paragraph(vec![InlineNode::text("hello")])])])]
     #[case("   > hello", vec![BlockNode::blockquote(vec![BlockNode::paragraph(vec![InlineNode::text("hello")])])])]
+    // Example 231: 4칸 들여쓰기는 code block
+    #[case("    > # Foo", vec![BlockNode::code_block(None, "> # Foo")])]
     // Example 232-233: Lazy continuation
     #[case("> bar\nbaz", vec![BlockNode::blockquote(vec![BlockNode::paragraph(vec![InlineNode::text("bar\nbaz")])])])]
     #[case("> bar\nbaz\n> foo", vec![BlockNode::blockquote(vec![BlockNode::paragraph(vec![InlineNode::text("bar\nbaz\nfoo")])])])]
+    // Example 234: Laziness 한계 - thematic break
+    #[case("> foo\n---", vec![BlockNode::blockquote(vec![BlockNode::paragraph(vec![InlineNode::text("foo")])]), BlockNode::thematic_break()])]
+    // Example 238: 4칸 들여쓰기 lazy continuation
+    #[case("> foo\n    - bar", vec![BlockNode::blockquote(vec![BlockNode::paragraph(vec![InlineNode::text("foo\n- bar")])])])]
+    // Example 239: 빈 blockquote
+    #[case(">", vec![BlockNode::blockquote(vec![])])]
+    // Example 240: 공백만 있는 빈 blockquote
+    #[case(">\n>  \n> ", vec![BlockNode::blockquote(vec![])])]
+    // Example 241: 앞뒤 빈 줄 있는 blockquote
+    #[case(">\n> foo\n>  ", vec![BlockNode::blockquote(vec![BlockNode::paragraph(vec![InlineNode::text("foo")])])])]
     // Example 242: 빈 줄로 분리된 두 blockquote
     #[case("> foo\n\n> bar", vec![BlockNode::blockquote(vec![BlockNode::paragraph(vec![InlineNode::text("foo")])]), BlockNode::blockquote(vec![BlockNode::paragraph(vec![InlineNode::text("bar")])])])]
     // Example 243: 여러 줄 하나의 paragraph
@@ -140,6 +141,8 @@ mod tests {
     #[case("> a\n>\n> b\n>\n> c", vec![BlockNode::blockquote(vec![BlockNode::paragraph(vec![InlineNode::text("a")]), BlockNode::paragraph(vec![InlineNode::text("b")]), BlockNode::paragraph(vec![InlineNode::text("c")])])])]
     // Example 245: Paragraph 후 blockquote
     #[case("foo\n> bar", vec![BlockNode::paragraph(vec![InlineNode::text("foo")]), BlockNode::blockquote(vec![BlockNode::paragraph(vec![InlineNode::text("bar")])])])]
+    // Example 246: blockquote/thematic break/blockquote
+    #[case("> aaa\n***\n> bbb", vec![BlockNode::blockquote(vec![BlockNode::paragraph(vec![InlineNode::text("aaa")])]), BlockNode::thematic_break(), BlockNode::blockquote(vec![BlockNode::paragraph(vec![InlineNode::text("bbb")])])])]
     // Example 247: Lazy continuation
     #[case("> bar\nbaz", vec![BlockNode::blockquote(vec![BlockNode::paragraph(vec![InlineNode::text("bar\nbaz")])])])]
     // Example 248: Blockquote 후 빈 줄 + paragraph
@@ -157,10 +160,11 @@ mod tests {
         assert_eq!(doc.children, expected);
     }
 
-    /// 중첩 blockquote 테스트
     #[rstest]
     // Example 250: 중첩 blockquote + lazy continuation
     #[case("> > > foo\nbar", 3, "foo\nbar")]
+    // Example 251: 최소 마커 중첩
+    #[case(">>> foo", 3, "foo")]
     // 추가 케이스
     #[case("> > nested", 2, "nested")]
     #[case("> > > deep", 3, "deep")]
@@ -169,6 +173,22 @@ mod tests {
     fn test_nested_blockquote(#[case] input: &str, #[case] depth: usize, #[case] text: &str) {
         let doc = parse(input);
         let expected = vec![bq(depth, BlockNode::paragraph(vec![InlineNode::text(text)]))];
+        assert_eq!(doc.children, expected);
+    }
+
+    // TODO: 현재 파서 미지원 케이스
+    #[rstest]
+    // Example 235: Laziness 한계 - list가 blockquote 중단
+    #[case("> - foo\n- bar", vec![BlockNode::blockquote(vec![BlockNode::bullet_list(true, vec![ListItemNode::new(vec![BlockNode::paragraph(vec![InlineNode::text("foo")])])])]), BlockNode::bullet_list(true, vec![ListItemNode::new(vec![BlockNode::paragraph(vec![InlineNode::text("bar")])])])])]
+    // Example 236: Laziness 한계 - indented code block
+    #[case(">     foo\n    bar", vec![BlockNode::blockquote(vec![BlockNode::code_block(None, "foo")]), BlockNode::code_block(None, "bar")])]
+    // Example 237: Laziness 한계 - fenced code block
+    #[case("> ```\nfoo\n```", vec![BlockNode::blockquote(vec![BlockNode::code_block(None, "")]), BlockNode::paragraph(vec![InlineNode::text("foo")]), BlockNode::code_block(None, "")])]
+    // Example 249: 빈 blockquote 줄 후 paragraph
+    #[case("> bar\n>\nbaz", vec![BlockNode::blockquote(vec![BlockNode::paragraph(vec![InlineNode::text("bar")])]), BlockNode::paragraph(vec![InlineNode::text("baz")])])]
+    #[ignore = "현재 파서 미지원"]
+    fn test_blockquote_pending(#[case] input: &str, #[case] expected: Vec<BlockNode>) {
+        let doc = parse(input);
         assert_eq!(doc.children, expected);
     }
 }
