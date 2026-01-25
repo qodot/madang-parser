@@ -1,10 +1,10 @@
 //! NoneContext: 새 블록 시작 대기 상태
 
 use super::{
-    CodeBlockFencedStartReason, CodeBlockIndentedStartReason, ItemLine, LineResult,
+    CodeBlockIndentedStartReason, ItemLine, LineResult,
     ListItemStartReason, ParsingContext,
 };
-use crate::parser::code_block_fenced::try_start as try_start_code_block_fenced;
+use crate::parser::code_block_fenced::{parse as parse_code_block_fenced, CodeBlockFencedOk};
 use crate::parser::code_block_indented::try_start as try_start_code_block_indented;
 use crate::parser::{blockquote, heading, list_item, thematic_break};
 
@@ -30,9 +30,7 @@ impl NoneContext {
         }
 
         // Fenced Code Block 시작 감지
-        if let Ok(CodeBlockFencedStartReason::Started(start)) =
-            try_start_code_block_fenced(line)
-        {
+        if let Ok(CodeBlockFencedOk::Start(start)) = parse_code_block_fenced(line, None) {
             let context = ParsingContext::CodeBlockFenced {
                 start,
                 content: Vec::new(),

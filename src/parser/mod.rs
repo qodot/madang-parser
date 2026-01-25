@@ -19,17 +19,15 @@ use crate::node::{
     BlockNode, CodeBlockNode, DocumentNode, HeadingNode, InlineNode, ListItemNode, ListNode,
     ParagraphNode, TextNode,
 };
-use code_block_fenced::{
-    try_end as try_end_code_block_fenced, try_start as try_start_code_block_fenced,
-};
+use code_block_fenced::{parse as parse_code_block_fenced, CodeBlockFencedOk};
 use code_block_indented::try_start as try_start_code_block_indented;
 use context::{
-    CodeBlockFencedStart, CodeBlockFencedStartReason, CodeBlockIndentedStartReason,
+    CodeBlockFencedStart, CodeBlockIndentedStartReason,
     HeadingSetextStartReason, ItemLine, LineResult, ListContinueReason, ListEndReason,
     ListItemStart, ListItemStartReason, NoneContext, ParsingContext,
 };
 use heading_setext::try_start as try_start_heading_setext;
-use helpers::{calculate_indent, remove_indent, trim_blank_lines};
+use helpers::{calculate_indent, trim_blank_lines};
 
 /// 파서 상태: (완성된 노드들, 현재 컨텍스트) - fold 누적용
 type ParserState = (Vec<BlockNode>, ParsingContext);
@@ -96,19 +94,18 @@ fn process_line_in_code_block(
     start: CodeBlockFencedStart,
     content: Vec<String>,
 ) -> LineResult {
-    // 닫는 펜스인지 확인
-    if try_end_code_block_fenced(current_line, start.fence_char, start.fence_len).is_ok() {
-        let content_str = content.join("\n");
-        let node = BlockNode::CodeBlock(CodeBlockNode::new(start.info, content_str));
-        return (vec![node], ParsingContext::None(NoneContext));
+    match parse_code_block_fenced(current_line, Some(&start)).unwrap() {
+        CodeBlockFencedOk::End => {
+            let node = code_block_fenced::finalize(start, content);
+            (vec![node], ParsingContext::None(NoneContext))
+        }
+        CodeBlockFencedOk::Content(line) => {
+            let content = push_string(content, line);
+            let context = ParsingContext::CodeBlockFenced { start, content };
+            (vec![], context)
+        }
+        CodeBlockFencedOk::Start(_) => unreachable!("parse with Some context should return End or Content"),
     }
-
-    // 코드 줄 추가
-    let code_line = remove_indent(current_line, start.indent);
-    let content = push_string(content, code_line.to_string());
-
-    let context = ParsingContext::CodeBlockFenced { start, content };
-    (vec![], context)
 }
 
 /// Paragraph 상태에서 줄 처리
@@ -121,7 +118,7 @@ fn process_line_in_paragraph(current_line: &str, pending_lines: Vec<String>) -> 
     }
 
     // Fenced Code Block 시작이면 Paragraph 종료 후 Code Block 시작
-    if let Ok(CodeBlockFencedStartReason::Started(start)) = try_start_code_block_fenced(current_line) {
+    if let Ok(CodeBlockFencedOk::Start(start)) = parse_code_block_fenced(current_line, None) {
         let text = pending_lines.join("\n");
         let context = ParsingContext::CodeBlockFenced {
             start,
@@ -416,7 +413,7 @@ fn process_line_in_blockquote(current_line: &str, pending_lines: Vec<String>) ->
     }
 
     // Fenced Code Block 시작이면 Blockquote 종료
-    if let Ok(CodeBlockFencedStartReason::Started(start)) = try_start_code_block_fenced(current_line) {
+    if let Ok(CodeBlockFencedOk::Start(start)) = parse_code_block_fenced(current_line, None) {
         let node = blockquote::finalize(pending_lines, parse_block_simple);
         let context = ParsingContext::CodeBlockFenced {
             start,
@@ -451,8 +448,7 @@ fn finalize_context(context: ParsingContext, nodes: Vec<BlockNode>) -> Vec<Block
     match context {
         ParsingContext::None(NoneContext) => nodes,
         ParsingContext::CodeBlockFenced { start, content } => {
-            let content_str = content.join("\n");
-            let node = BlockNode::CodeBlock(CodeBlockNode::new(start.info, content_str));
+            let node = code_block_fenced::finalize(start, content);
             push_node(nodes, node)
         }
         ParsingContext::Paragraph { pending_lines } => {
@@ -496,10 +492,7 @@ fn push_string(mut vec: Vec<String>, s: String) -> Vec<String> {
 
 /// 단일 블록 파싱 (blockquote 내부 등에서 사용)
 fn parse_block_simple(block: &str) -> BlockNode {
-    let indent = calculate_indent(block);
-    let trimmed = block.trim();
-
-    if let Some(node) = code_block_fenced::parse(block, indent) {
+    if let Some(node) = code_block_fenced::parse_text(block) {
         return node;
     }
 
@@ -516,7 +509,7 @@ fn parse_block_simple(block: &str) -> BlockNode {
         return node;
     }
 
-    paragraph::parse(trimmed)
+    paragraph::parse(block.trim())
 }
 
 #[cfg(test)]

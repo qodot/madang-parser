@@ -9,7 +9,7 @@ pub use none_context::NoneContext;
 use crate::node::BlockNode;
 
 // 각 파서 모듈에서 타입 re-export
-pub use super::code_block_fenced::{CodeBlockFencedStart, CodeBlockFencedStartReason};
+pub use super::code_block_fenced::CodeBlockFencedStart;
 pub use super::code_block_indented::{
     CodeBlockIndentedNotStartReason, CodeBlockIndentedStartReason,
 };

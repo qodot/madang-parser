@@ -1,17 +1,9 @@
-//! Fenced Code Block 파서
-//!
-//! 백틱(\`\`\`) 또는 틸드(~~~)로 감싸진 코드 블록을 파싱합니다.
+//! https://spec.commonmark.org/0.31.2/#fenced-code-blocks
 
 use crate::node::{BlockNode, CodeBlockNode};
 use super::helpers::{count_leading_char, remove_indent};
 
-// =============================================================================
-// 타입 정의
-// =============================================================================
-
-/// Fenced Code Block 시작 정보
-/// try_start에서 반환되며, 종료 조건 판단에 사용
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CodeBlockFencedStart {
     /// 펜스 문자 ('`' 또는 '~')
     pub fence_char: char,
@@ -23,64 +15,51 @@ pub struct CodeBlockFencedStart {
     pub indent: usize,
 }
 
-/// Fenced Code Block 시작 성공 사유
-#[derive(Debug, Clone)]
-pub enum CodeBlockFencedStartReason {
-    /// 정상적인 시작
-    Started(CodeBlockFencedStart),
+#[derive(Debug, Clone, PartialEq)]
+pub enum CodeBlockFencedOk {
+    /// 시작 줄 (여는 펜스)
+    Start(CodeBlockFencedStart),
+    /// 내용 줄 (들여쓰기 제거됨)
+    Content(String),
+    /// 종료 줄 (닫는 펜스)
+    End,
 }
 
-/// Fenced Code Block 시작 아님 사유
 #[derive(Debug, Clone, PartialEq)]
-pub enum CodeBlockFencedNotStartReason {
+pub enum CodeBlockFencedErr {
     /// 4칸 이상 들여쓰기 (indented code block으로 해석됨)
     CodeBlockIndented,
     /// 펜스 문자 없음 (```, ~~~가 아님)
     NoFence,
 }
 
-/// Fenced Code Block 종료 사유
-#[derive(Debug, Clone, PartialEq)]
-pub enum CodeBlockFencedEndReason {
-    /// 닫는 펜스 발견
-    ClosingFence,
+pub fn parse(line: &str, start: Option<&CodeBlockFencedStart>) -> Result<CodeBlockFencedOk, CodeBlockFencedErr> {
+    match start {
+        None => parse_start(line),
+        Some(s) => Ok(parse_continue(line, s)),
+    }
 }
 
-/// Fenced Code Block 계속 사유
-#[derive(Debug, Clone, PartialEq)]
-pub enum CodeBlockFencedContinueReason {
-    /// 4칸 이상 들여쓰기 (코드 내용)
-    TooMuchIndent,
-    /// 펜스 길이 부족
-    FenceTooShort,
-    /// 펜스 문자 불일치
-    FenceCharMismatch,
-    /// 펜스 뒤 텍스트 있음
-    TextAfterFence,
-}
-
-// =============================================================================
-// 함수
-// =============================================================================
-
-/// Fenced Code Block 시작 줄인지 확인
-/// 성공 시 Ok(Started), 실패 시 Err(사유) 반환
-pub(crate) fn try_start(line: &str) -> Result<CodeBlockFencedStartReason, CodeBlockFencedNotStartReason> {
+fn parse_start(line: &str) -> Result<CodeBlockFencedOk, CodeBlockFencedErr> {
     let indent = count_leading_char(line, ' ');
+
+    // 4칸 이상 들여쓰기는 indented code block
     if indent > 3 {
-        return Err(CodeBlockFencedNotStartReason::CodeBlockIndented);
+        return Err(CodeBlockFencedErr::CodeBlockIndented);
     }
 
     let after_indent = &line[indent..];
 
+    // 펜스 문자와 길이 확인
     let (fence_char, fence_len) = if after_indent.starts_with("```") {
         ('`', count_leading_char(after_indent, '`'))
     } else if after_indent.starts_with("~~~") {
         ('~', count_leading_char(after_indent, '~'))
     } else {
-        return Err(CodeBlockFencedNotStartReason::NoFence);
+        return Err(CodeBlockFencedErr::NoFence);
     };
 
+    // info string 추출
     let info = {
         let after_fence = &after_indent[fence_len..];
         let trimmed = after_fence.trim();
@@ -91,7 +70,7 @@ pub(crate) fn try_start(line: &str) -> Result<CodeBlockFencedStartReason, CodeBl
         }
     };
 
-    Ok(CodeBlockFencedStartReason::Started(CodeBlockFencedStart {
+    Ok(CodeBlockFencedOk::Start(CodeBlockFencedStart {
         fence_char,
         fence_len,
         info,
@@ -99,60 +78,48 @@ pub(crate) fn try_start(line: &str) -> Result<CodeBlockFencedStartReason, CodeBl
     }))
 }
 
-/// 닫는 펜스인지 확인
-/// 성공 시 Ok(ClosingFence), 실패 시 Err(사유) 반환
-pub(crate) fn try_end(
-    line: &str,
-    fence_char: char,
-    min_fence_len: usize,
-) -> Result<CodeBlockFencedEndReason, CodeBlockFencedContinueReason> {
+fn parse_continue(line: &str, start: &CodeBlockFencedStart) -> CodeBlockFencedOk {
     let indent = count_leading_char(line, ' ');
+
+    // 4칸 이상 들여쓰기는 내용
     if indent > 3 {
-        return Err(CodeBlockFencedContinueReason::TooMuchIndent);
+        return CodeBlockFencedOk::Content(remove_indent(line, start.indent).to_string());
     }
 
     let after_indent = &line[indent..];
-    let closing_len = count_leading_char(after_indent, fence_char);
+    let closing_len = count_leading_char(after_indent, start.fence_char);
 
-    // 펜스 문자 없음 (다른 문자로 시작)
-    if closing_len == 0 {
-        return Err(CodeBlockFencedContinueReason::FenceCharMismatch);
+    // 닫는 펜스 조건: 같은 문자, 충분한 길이, 뒤에 텍스트 없음
+    if closing_len >= start.fence_len && after_indent[closing_len..].trim().is_empty() {
+        return CodeBlockFencedOk::End;
     }
 
-    // 펜스 길이 부족
-    if closing_len < min_fence_len {
-        return Err(CodeBlockFencedContinueReason::FenceTooShort);
-    }
-
-    // 펜스 뒤 텍스트 있음
-    if !after_indent[closing_len..].trim().is_empty() {
-        return Err(CodeBlockFencedContinueReason::TextAfterFence);
-    }
-
-    Ok(CodeBlockFencedEndReason::ClosingFence)
+    CodeBlockFencedOk::Content(remove_indent(line, start.indent).to_string())
 }
 
-/// Fenced Code Block 파싱 시도 (블록 단위)
-/// blockquote 내부 등에서 사용
-/// 성공하면 Some(CodeBlock), 실패하면 None 반환
-pub fn parse(text: &str, _indent: usize) -> Option<BlockNode> {
+pub fn finalize(start: CodeBlockFencedStart, content: Vec<String>) -> BlockNode {
+    let content_str = content.join("\n");
+    BlockNode::CodeBlock(CodeBlockNode::new(start.info, content_str))
+}
+
+pub fn parse_text(text: &str) -> Option<BlockNode> {
     let lines: Vec<&str> = text.lines().collect();
 
     if lines.is_empty() {
         return None;
     }
 
-    // 여는 펜스의 들여쓰기 계산 (0-3칸만 허용)
+    // 여는 펜스 확인
     let first_line = lines[0];
-    let start = match try_start(first_line) {
-        Ok(CodeBlockFencedStartReason::Started(s)) => s,
-        Err(_) => return None,
+    let start = match parse(first_line, None) {
+        Ok(CodeBlockFencedOk::Start(s)) => s,
+        _ => return None,
     };
 
     // 닫는 펜스 찾기
     let has_closing_fence = if lines.len() >= 2 {
         let last_line = lines[lines.len() - 1];
-        try_end(last_line, start.fence_char, start.fence_len).is_ok()
+        matches!(parse(last_line, Some(&start)), Ok(CodeBlockFencedOk::End))
     } else {
         false
     };
@@ -164,13 +131,12 @@ pub fn parse(text: &str, _indent: usize) -> Option<BlockNode> {
         lines[1..].to_vec()
     };
 
-    let content = content_lines
+    let content: Vec<String> = content_lines
         .iter()
-        .map(|line| remove_indent(line, start.indent))
-        .collect::<Vec<_>>()
-        .join("\n");
+        .map(|line| remove_indent(line, start.indent).to_string())
+        .collect();
 
-    Some(BlockNode::CodeBlock(CodeBlockNode::new(start.info, content)))
+    Some(finalize(start, content))
 }
 
 #[cfg(test)]
@@ -179,98 +145,126 @@ mod tests {
     use crate::node::BlockNode;
     use rstest::rstest;
 
-    /// try_start 테스트
-    /// expected: Ok((fence_char, fence_len, info, indent)) 또는 Err(reason)
+    // =============================================================================
+    // parse(line, None) 테스트 - 시작 줄 판단
+    // =============================================================================
+
     #[rstest]
-    // 백틱 펜스
-    #[case("```", Ok(('`', 3, None, 0)))]
-    #[case("````", Ok(('`', 4, None, 0)))]
-    #[case("`````", Ok(('`', 5, None, 0)))]
-    // 틸드 펜스
-    #[case("~~~", Ok(('~', 3, None, 0)))]
-    #[case("~~~~", Ok(('~', 4, None, 0)))]
-    #[case("~~~~~", Ok(('~', 5, None, 0)))]
-    // info string
-    #[case("```rust", Ok(('`', 3, Some("rust"), 0)))]
-    #[case("~~~ python", Ok(('~', 3, Some("python"), 0)))]
-    #[case("```  rust  ", Ok(('`', 3, Some("rust"), 0)))]  // 앞뒤 공백 제거
-    #[case("```rust python", Ok(('`', 3, Some("rust python"), 0)))]  // 공백 포함
-    // 들여쓰기 0-3칸
-    #[case(" ```", Ok(('`', 3, None, 1)))]
-    #[case("  ```", Ok(('`', 3, None, 2)))]
-    #[case("   ```", Ok(('`', 3, None, 3)))]
-    #[case("   ```rust", Ok(('`', 3, Some("rust"), 3)))]
+    // Example 119: 백틱 펜스
+    #[case("```", Some(('`', 3, None, 0)))]
+    #[case("````", Some(('`', 4, None, 0)))]
+    #[case("`````", Some(('`', 5, None, 0)))]
+    // Example 120: 틸드 펜스
+    #[case("~~~", Some(('~', 3, None, 0)))]
+    #[case("~~~~", Some(('~', 4, None, 0)))]
+    #[case("~~~~~", Some(('~', 5, None, 0)))]
+    // Example 142-143: info string
+    #[case("```rust", Some(('`', 3, Some("rust"), 0)))]
+    #[case("~~~ python", Some(('~', 3, Some("python"), 0)))]
+    #[case("```  rust  ", Some(('`', 3, Some("rust"), 0)))]
+    #[case("```rust python", Some(('`', 3, Some("rust python"), 0)))]
+    // Example 131-133: 들여쓰기 0-3칸
+    #[case(" ```", Some(('`', 3, None, 1)))]
+    #[case("  ```", Some(('`', 3, None, 2)))]
+    #[case("   ```", Some(('`', 3, None, 3)))]
+    #[case("   ```rust", Some(('`', 3, Some("rust"), 3)))]
     // 펜스가 아닌 경우
-    #[case("``", Err(CodeBlockFencedNotStartReason::NoFence))]           // 백틱 2개
-    #[case("~~", Err(CodeBlockFencedNotStartReason::NoFence))]           // 틸드 2개
-    #[case("    ```", Err(CodeBlockFencedNotStartReason::CodeBlockIndented))]  // 4칸 들여쓰기
-    #[case("code", Err(CodeBlockFencedNotStartReason::NoFence))]         // 일반 텍스트
-    #[case("", Err(CodeBlockFencedNotStartReason::NoFence))]             // 빈 줄
-    #[case("  ", Err(CodeBlockFencedNotStartReason::NoFence))]           // 공백만
-    fn test_try_start(
+    #[case("``", None)]
+    #[case("~~", None)]
+    #[case("    ```", None)]  // 4칸 들여쓰기
+    #[case("code", None)]
+    #[case("", None)]
+    #[case("  ", None)]
+    fn test_parse_start(
         #[case] input: &str,
-        #[case] expected: Result<(char, usize, Option<&str>, usize), CodeBlockFencedNotStartReason>,
+        #[case] expected: Option<(char, usize, Option<&str>, usize)>,
     ) {
-        let result = try_start(input);
+        let result = parse(input, None);
         match expected {
-            Ok((expected_char, expected_len, expected_info, expected_indent)) => {
-                assert!(result.is_ok(), "시작이어야 함: {:?}", input);
-                let CodeBlockFencedStartReason::Started(start) = result.unwrap();
-                assert_eq!(start.fence_char, expected_char, "fence_char");
-                assert_eq!(start.fence_len, expected_len, "fence_len");
-                assert_eq!(start.info.as_deref(), expected_info, "info");
-                assert_eq!(start.indent, expected_indent, "indent");
+            Some((expected_char, expected_len, expected_info, expected_indent)) => {
+                if let Ok(CodeBlockFencedOk::Start(start)) = result {
+                    assert_eq!(start.fence_char, expected_char, "fence_char");
+                    assert_eq!(start.fence_len, expected_len, "fence_len");
+                    assert_eq!(start.info.as_deref(), expected_info, "info");
+                    assert_eq!(start.indent, expected_indent, "indent");
+                } else {
+                    panic!("시작이어야 함: {:?}, got {:?}", input, result);
+                }
             }
-            Err(expected_reason) => {
-                assert!(result.is_err(), "시작이 아니어야 함: {:?}", input);
-                assert_eq!(result.unwrap_err(), expected_reason);
+            None => {
+                assert!(
+                    result.is_err(),
+                    "시작이 아니어야 함: {:?}, got {:?}",
+                    input,
+                    result
+                );
             }
         }
     }
 
-    /// try_end 테스트
-    /// expected: Ok(()) 또는 Err(reason)
+    // =============================================================================
+    // parse(line, Some(&start)) 테스트 - 종료/내용 판단
+    // =============================================================================
+
     #[rstest]
-    // 유효한 닫는 펜스
-    #[case("```", '`', 3, Ok(()))]
-    #[case("````", '`', 3, Ok(()))]      // 더 긴 펜스 OK
-    #[case("`````", '`', 3, Ok(()))]
-    #[case("~~~", '~', 3, Ok(()))]
-    #[case("~~~~", '~', 3, Ok(()))]
+    // Example 124-125: 유효한 닫는 펜스
+    #[case("```", '`', 3, true)]
+    #[case("````", '`', 3, true)]
+    #[case("`````", '`', 3, true)]
+    #[case("~~~", '~', 3, true)]
+    #[case("~~~~", '~', 3, true)]
     // 들여쓰기 0-3칸
-    #[case(" ```", '`', 3, Ok(()))]
-    #[case("  ```", '`', 3, Ok(()))]
-    #[case("   ```", '`', 3, Ok(()))]
+    #[case(" ```", '`', 3, true)]
+    #[case("  ```", '`', 3, true)]
+    #[case("   ```", '`', 3, true)]
     // 펜스 뒤 공백만 허용
-    #[case("```  ", '`', 3, Ok(()))]
-    #[case("~~~   ", '~', 3, Ok(()))]
-    // 유효하지 않은 닫는 펜스
-    #[case("``", '`', 3, Err(CodeBlockFencedContinueReason::FenceTooShort))]       // 길이 부족
-    #[case("```", '`', 4, Err(CodeBlockFencedContinueReason::FenceTooShort))]      // 최소 길이보다 짧음
-    #[case("~~~", '`', 3, Err(CodeBlockFencedContinueReason::FenceCharMismatch))]  // 문자 불일치
-    #[case("```", '~', 3, Err(CodeBlockFencedContinueReason::FenceCharMismatch))]  // 문자 불일치
-    #[case("    ```", '`', 3, Err(CodeBlockFencedContinueReason::TooMuchIndent))]  // 4칸 들여쓰기
-    #[case("```code", '`', 3, Err(CodeBlockFencedContinueReason::TextAfterFence))] // 펜스 뒤 텍스트
-    #[case("``` x", '`', 3, Err(CodeBlockFencedContinueReason::TextAfterFence))]   // 펜스 뒤 텍스트
-    fn test_try_end(
+    #[case("```  ", '`', 3, true)]
+    #[case("~~~   ", '~', 3, true)]
+    // Example 139: 유효하지 않은 닫는 펜스 → Content
+    #[case("``", '`', 3, false)]
+    #[case("```", '`', 4, false)]
+    // Example 122-123: 문자 불일치
+    #[case("~~~", '`', 3, false)]
+    #[case("```", '~', 3, false)]
+    // 4칸 들여쓰기
+    #[case("    ```", '`', 3, false)]
+    // Example 140: 펜스 뒤 텍스트
+    #[case("```code", '`', 3, false)]
+    #[case("``` x", '`', 3, false)]
+    fn test_parse_continue(
         #[case] input: &str,
         #[case] fence_char: char,
-        #[case] min_len: usize,
-        #[case] expected: Result<(), CodeBlockFencedContinueReason>,
+        #[case] fence_len: usize,
+        #[case] is_end: bool,
     ) {
-        let result = try_end(input, fence_char, min_len);
-        match expected {
-            Ok(()) => {
-                assert!(result.is_ok(), "종료여야 함: {:?}", input);
-            }
-            Err(expected_reason) => {
-                assert!(result.is_err(), "계속이어야 함: {:?}", input);
-                assert_eq!(result.unwrap_err(), expected_reason);
-            }
+        let start = CodeBlockFencedStart {
+            fence_char,
+            fence_len,
+            info: None,
+            indent: 0,
+        };
+        let result = parse(input, Some(&start));
+        if is_end {
+            assert!(
+                matches!(result, Ok(CodeBlockFencedOk::End)),
+                "종료여야 함: {:?}, got {:?}",
+                input,
+                result
+            );
+        } else {
+            assert!(
+                matches!(result, Ok(CodeBlockFencedOk::Content(_))),
+                "내용이어야 함: {:?}, got {:?}",
+                input,
+                result
+            );
         }
     }
 
-    /// Fenced Code Block 통합 테스트 (CommonMark Example 기반)
+    // =============================================================================
+    // 통합 테스트 (CommonMark Example 기반)
+    // =============================================================================
+
     #[rstest]
     // Example 119-120: 기본 백틱/틸드 펜스
     #[case("```\ncode\n```", vec![BlockNode::code_block(None, "code")])]
@@ -304,7 +298,7 @@ mod tests {
     #[case("```rust python\ncode\n```", vec![BlockNode::code_block(Some("rust python"), "code")])]
     #[case("~~~rust\ncode\n~~~", vec![BlockNode::code_block(Some("rust"), "code")])]
     // Example 144: 특수 문자 info string
-    #[case("````;\n````", vec![BlockNode::code_block(Some(";"), "")])]
+    #[case("```;\n````", vec![BlockNode::code_block(Some(";"), "")])]
     // 추가: 빈 줄 포함
     #[case("```\nline1\n\nline2\n```", vec![BlockNode::code_block(None, "line1\n\nline2")])]
     #[case("```rust\nfn main() {\n\n    println!(\"hi\");\n}\n```", vec![BlockNode::code_block(Some("rust"), "fn main() {\n\n    println!(\"hi\");\n}")])]
