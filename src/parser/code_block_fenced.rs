@@ -3,11 +3,65 @@
 //! 백틱(\`\`\`) 또는 틸드(~~~)로 감싸진 코드 블록을 파싱합니다.
 
 use crate::node::{BlockNode, CodeBlockNode};
-use super::context::{
-    CodeBlockFencedContinueReason, CodeBlockFencedEndReason, CodeBlockFencedNotStartReason,
-    CodeBlockFencedStart, CodeBlockFencedStartReason,
-};
 use super::helpers::{count_leading_char, remove_indent};
+
+// =============================================================================
+// 타입 정의
+// =============================================================================
+
+/// Fenced Code Block 시작 정보
+/// try_start에서 반환되며, 종료 조건 판단에 사용
+#[derive(Debug, Clone)]
+pub struct CodeBlockFencedStart {
+    /// 펜스 문자 ('`' 또는 '~')
+    pub fence_char: char,
+    /// 펜스 길이 (최소 3)
+    pub fence_len: usize,
+    /// info string (언어 등)
+    pub info: Option<String>,
+    /// 여는 펜스의 들여쓰기
+    pub indent: usize,
+}
+
+/// Fenced Code Block 시작 성공 사유
+#[derive(Debug, Clone)]
+pub enum CodeBlockFencedStartReason {
+    /// 정상적인 시작
+    Started(CodeBlockFencedStart),
+}
+
+/// Fenced Code Block 시작 아님 사유
+#[derive(Debug, Clone, PartialEq)]
+pub enum CodeBlockFencedNotStartReason {
+    /// 4칸 이상 들여쓰기 (indented code block으로 해석됨)
+    CodeBlockIndented,
+    /// 펜스 문자 없음 (```, ~~~가 아님)
+    NoFence,
+}
+
+/// Fenced Code Block 종료 사유
+#[derive(Debug, Clone, PartialEq)]
+pub enum CodeBlockFencedEndReason {
+    /// 닫는 펜스 발견
+    ClosingFence,
+}
+
+/// Fenced Code Block 계속 사유
+#[derive(Debug, Clone, PartialEq)]
+pub enum CodeBlockFencedContinueReason {
+    /// 4칸 이상 들여쓰기 (코드 내용)
+    TooMuchIndent,
+    /// 펜스 길이 부족
+    FenceTooShort,
+    /// 펜스 문자 불일치
+    FenceCharMismatch,
+    /// 펜스 뒤 텍스트 있음
+    TextAfterFence,
+}
+
+// =============================================================================
+// 함수
+// =============================================================================
 
 /// Fenced Code Block 시작 줄인지 확인
 /// 성공 시 Ok(Started), 실패 시 Err(사유) 반환

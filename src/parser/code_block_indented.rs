@@ -2,10 +2,38 @@
 //!
 //! 4칸 들여쓰기로 작성된 코드 블록을 파싱합니다.
 
-use super::context::{
-    CodeBlockIndentedNotStartReason, CodeBlockIndentedStart, CodeBlockIndentedStartReason,
-};
 use super::helpers::count_leading_char;
+
+// =============================================================================
+// 타입 정의
+// =============================================================================
+
+/// Indented Code Block 시작 정보
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodeBlockIndentedStart {
+    /// 첫 줄 내용 (4칸 들여쓰기 제거 후)
+    pub content: String,
+}
+
+/// Indented Code Block 시작 성공 사유
+#[derive(Debug, Clone, PartialEq)]
+pub enum CodeBlockIndentedStartReason {
+    /// 정상적인 시작
+    Started(CodeBlockIndentedStart),
+}
+
+/// Indented Code Block 시작 아님 사유
+#[derive(Debug, Clone, PartialEq)]
+pub enum CodeBlockIndentedNotStartReason {
+    /// 빈 줄 (공백만 있는 줄 포함)
+    Empty,
+    /// 들여쓰기 부족 (4칸 미만)
+    InsufficientIndent,
+}
+
+// =============================================================================
+// 함수
+// =============================================================================
 
 /// Indented Code Block 시작 줄인지 확인
 /// 성공 시 Ok(Started), 실패 시 Err(사유) 반환

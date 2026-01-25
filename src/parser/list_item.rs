@@ -5,11 +5,180 @@
 //! - 들여쓰기 규칙
 //! - Continuation line 판별
 
-use super::context::{
-    ItemLine, ListContinueReason, ListEndReason, ListItemNotStartReason, ListItemStart,
-    ListItemStartReason, ListMarker,
-};
+use crate::node::ListType;
 use super::helpers::count_leading_char;
+
+// =============================================================================
+// 타입 정의
+// =============================================================================
+
+/// 리스트 마커 타입
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListMarker {
+    /// Bullet 마커: '-', '+', '*'
+    Bullet(char),
+    /// Ordered 마커: 숫자 + '.' 또는 ')'
+    Ordered {
+        /// 시작 숫자
+        start: usize,
+        /// 구분자 ('.' 또는 ')')
+        delimiter: char,
+    },
+}
+
+impl ListMarker {
+    /// ListType과 시작 번호로 변환
+    pub fn to_list_type(&self) -> (ListType, usize) {
+        match self {
+            ListMarker::Bullet(_) => (ListType::Bullet, 1),
+            ListMarker::Ordered { start, delimiter } => (
+                ListType::Ordered {
+                    delimiter: *delimiter,
+                },
+                *start,
+            ),
+        }
+    }
+
+    /// 같은 리스트 타입인지 확인 (같은 리스트에 속할 수 있는지)
+    pub fn is_same_type(&self, other: &ListMarker) -> bool {
+        match (self, other) {
+            (ListMarker::Bullet(c1), ListMarker::Bullet(c2)) => c1 == c2,
+            (
+                ListMarker::Ordered { delimiter: d1, .. },
+                ListMarker::Ordered { delimiter: d2, .. },
+            ) => d1 == d2,
+            _ => false,
+        }
+    }
+}
+
+/// List Item 시작 정보
+/// try_start에서 반환되며, 같은 리스트 소속 여부 판단에 사용
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListItemStart {
+    /// 마커 타입
+    pub marker: ListMarker,
+    /// 마커 앞 들여쓰기 (0-3칸)
+    pub indent: usize,
+    /// 내용 시작 위치 (마커 + 공백 이후)
+    pub content_indent: usize,
+    /// 첫 줄 내용 (마커 이후)
+    pub content: String,
+}
+
+impl ListItemStart {
+    /// 라인에서 content를 추출하여 새 인스턴스 반환
+    pub fn with_content_from(self, line: &str) -> Self {
+        let content = if self.content_indent >= line.len() {
+            String::new()
+        } else {
+            line[self.content_indent..].to_string()
+        };
+        Self { content, ..self }
+    }
+
+    #[cfg(test)]
+    pub fn bullet(marker_char: char, indent: usize, content_indent: usize, content: &str) -> Self {
+        Self {
+            marker: ListMarker::Bullet(marker_char),
+            indent,
+            content_indent,
+            content: content.to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn ordered(
+        start: usize,
+        delimiter: char,
+        indent: usize,
+        content_indent: usize,
+        content: &str,
+    ) -> Self {
+        Self {
+            marker: ListMarker::Ordered { start, delimiter },
+            indent,
+            content_indent,
+            content: content.to_string(),
+        }
+    }
+}
+
+/// List Item 시작 성공 사유
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListItemStartReason {
+    /// 정상적인 시작
+    Started(ListItemStart),
+}
+
+/// List Item 시작 아님 사유
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListItemNotStartReason {
+    /// 4칸 이상 들여쓰기 (indented code block으로 해석됨)
+    CodeBlockIndented,
+    /// 유효한 리스트 마커 아님
+    NotListMarker,
+}
+
+/// List 종료 사유
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListEndReason {
+    /// 줄 다시 처리 필요 (다른 블록/새 리스트)
+    Reprocess,
+}
+
+/// 리스트 아이템 내용 줄
+#[derive(Debug, Clone, PartialEq)]
+pub struct ItemLine {
+    /// 내용
+    pub content: String,
+    /// true면 텍스트 전용 (리스트 마커처럼 보여도 재파싱 시 리스트 아님)
+    /// Example 303: 4칸 들여쓰기된 마커는 텍스트 전용
+    pub text_only: bool,
+}
+
+impl ItemLine {
+    pub fn new(content: String, text_only: bool) -> Self {
+        Self { content, text_only }
+    }
+
+    pub fn text(content: String) -> Self {
+        Self {
+            content,
+            text_only: false,
+        }
+    }
+
+    pub fn text_only(content: String) -> Self {
+        Self {
+            content,
+            text_only: true,
+        }
+    }
+
+    pub fn blank() -> Self {
+        Self {
+            content: String::new(),
+            text_only: false,
+        }
+    }
+}
+
+/// List 계속 사유
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListContinueReason {
+    /// 빈 줄 (pending_blank 설정)
+    Blank,
+    /// 새 아이템
+    NewItem(ListItemStart),
+    /// Continuation line (같은 아이템에 내용 추가)
+    ContinuationLine(ItemLine),
+}
+
+// =============================================================================
+// 함수
+// =============================================================================
 
 /// List Item 시작 줄인지 확인
 /// 성공 시 Ok(Started), 실패 시 Err(사유) 반환
@@ -422,5 +591,44 @@ mod tests {
         #[case] expected: Result<ListEndReason, ListContinueReason>,
     ) {
         assert_eq!(try_end(line, &marker, first_content_indent, current_content_indent), expected);
+    }
+
+    // === ListMarker::to_list_type 테스트 ===
+    #[rstest]
+    #[case(ListMarker::Bullet('-'), ListType::Bullet, 1)]
+    #[case(ListMarker::Bullet('+'), ListType::Bullet, 1)]
+    #[case(ListMarker::Bullet('*'), ListType::Bullet, 1)]
+    #[case(ListMarker::Ordered { start: 1, delimiter: '.' }, ListType::Ordered { delimiter: '.' }, 1)]
+    #[case(ListMarker::Ordered { start: 5, delimiter: '.' }, ListType::Ordered { delimiter: '.' }, 5)]
+    #[case(ListMarker::Ordered { start: 1, delimiter: ')' }, ListType::Ordered { delimiter: ')' }, 1)]
+    fn test_to_list_type(
+        #[case] marker: ListMarker,
+        #[case] expected_type: ListType,
+        #[case] expected_start: usize,
+    ) {
+        let (list_type, start) = marker.to_list_type();
+        assert_eq!(list_type, expected_type);
+        assert_eq!(start, expected_start);
+    }
+
+    // === ListMarker::is_same_type 테스트 ===
+    #[rstest]
+    // 같은 Bullet 마커
+    #[case(ListMarker::Bullet('-'), ListMarker::Bullet('-'), true)]
+    #[case(ListMarker::Bullet('+'), ListMarker::Bullet('+'), true)]
+    #[case(ListMarker::Bullet('*'), ListMarker::Bullet('*'), true)]
+    // 다른 Bullet 마커
+    #[case(ListMarker::Bullet('-'), ListMarker::Bullet('+'), false)]
+    #[case(ListMarker::Bullet('-'), ListMarker::Bullet('*'), false)]
+    // 같은 Ordered 마커 (delimiter만 비교, start는 무관)
+    #[case(ListMarker::Ordered { start: 1, delimiter: '.' }, ListMarker::Ordered { start: 1, delimiter: '.' }, true)]
+    #[case(ListMarker::Ordered { start: 1, delimiter: '.' }, ListMarker::Ordered { start: 5, delimiter: '.' }, true)]
+    #[case(ListMarker::Ordered { start: 1, delimiter: ')' }, ListMarker::Ordered { start: 1, delimiter: ')' }, true)]
+    // 다른 Ordered 마커
+    #[case(ListMarker::Ordered { start: 1, delimiter: '.' }, ListMarker::Ordered { start: 1, delimiter: ')' }, false)]
+    // Bullet과 Ordered 혼합
+    #[case(ListMarker::Bullet('-'), ListMarker::Ordered { start: 1, delimiter: '.' }, false)]
+    fn test_is_same_type(#[case] a: ListMarker, #[case] b: ListMarker, #[case] expected: bool) {
+        assert_eq!(a.is_same_type(&b), expected);
     }
 }

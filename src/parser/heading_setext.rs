@@ -4,9 +4,59 @@
 //! - `=` 밑줄: 레벨 1
 //! - `-` 밑줄: 레벨 2
 
-use super::context::{
-    HeadingSetextNotStartReason, HeadingSetextStart, HeadingSetextStartReason, SetextLevel,
-};
+// =============================================================================
+// 타입 정의
+// =============================================================================
+
+/// Setext 밑줄 레벨
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SetextLevel {
+    /// `=` 밑줄 → 레벨 1
+    Level1,
+    /// `-` 밑줄 → 레벨 2
+    Level2,
+}
+
+impl SetextLevel {
+    /// 숫자 레벨로 변환 (Heading의 level 필드용)
+    pub fn to_level(self) -> u8 {
+        match self {
+            SetextLevel::Level1 => 1,
+            SetextLevel::Level2 => 2,
+        }
+    }
+}
+
+/// Setext Heading 밑줄 시작 정보
+#[derive(Debug, Clone, PartialEq)]
+pub struct HeadingSetextStart {
+    /// 밑줄 레벨 (1 또는 2)
+    pub level: SetextLevel,
+}
+
+/// Setext 밑줄 감지 성공 사유
+#[derive(Debug, Clone, PartialEq)]
+pub enum HeadingSetextStartReason {
+    /// 유효한 밑줄 발견
+    Started(HeadingSetextStart),
+}
+
+/// Setext 밑줄 아님 사유
+#[derive(Debug, Clone, PartialEq)]
+pub enum HeadingSetextNotStartReason {
+    /// 4칸 이상 들여쓰기 (코드 블록으로 해석됨)
+    CodeBlockIndented,
+    /// 빈 줄
+    Empty,
+    /// 밑줄 문자(=, -)가 아님
+    NotUnderlineChar,
+    /// 문자가 섞임 (예: "=-=")
+    MixedChars,
+}
+
+// =============================================================================
+// 함수
+// =============================================================================
 
 /// Setext 밑줄인지 확인하고 레벨 반환
 ///
@@ -144,5 +194,13 @@ mod tests {
     fn test_setext_heading(#[case] input: &str, #[case] expected: Vec<BlockNode>) {
         let doc = crate::parse(input);
         assert_eq!(doc.children, expected);
+    }
+
+    // === SetextLevel::to_level 테스트 ===
+    #[rstest]
+    #[case(SetextLevel::Level1, 1)]
+    #[case(SetextLevel::Level2, 2)]
+    fn test_setext_level_to_level(#[case] level: SetextLevel, #[case] expected: u8) {
+        assert_eq!(level.to_level(), expected);
     }
 }
