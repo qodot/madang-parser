@@ -13,9 +13,9 @@ use crate::parser::{heading, list_item, thematic_break};
 pub struct NoneContext;
 
 impl NoneContext {
-    pub fn parse(self, current_line: &str) -> LineResult {
-        let indent = calculate_indent(current_line);
-        let trimmed = current_line.trim();
+    pub fn parse(self, line: &str) -> LineResult {
+        let indent = calculate_indent(line);
+        let trimmed = line.trim();
 
         // 빈 줄은 무시
         if trimmed.is_empty() {
@@ -23,17 +23,17 @@ impl NoneContext {
         }
 
         // 한 줄 블록들 (Thematic Break, ATX Heading)
-        if let Ok(node) = thematic_break::parse(current_line) {
+        if let Ok(node) = thematic_break::parse(line) {
             return (vec![node], ParsingContext::None(NoneContext));
         }
 
-        if let Ok(node) = heading::parse(current_line) {
+        if let Ok(node) = heading::parse(line) {
             return (vec![node], ParsingContext::None(NoneContext));
         }
 
         // Fenced Code Block 시작 감지
         if let Ok(CodeBlockFencedStartReason::Started(start)) =
-            try_start_code_block_fenced(current_line)
+            try_start_code_block_fenced(line)
         {
             let context = ParsingContext::CodeBlockFenced {
                 start,
@@ -51,7 +51,7 @@ impl NoneContext {
         }
 
         // List 시작 감지
-        if let Ok(ListItemStartReason::Started(start)) = list_item::try_start(current_line) {
+        if let Ok(ListItemStartReason::Started(start)) = list_item::try_start(line) {
             let content = start.content.clone();
             let content_indent = start.content_indent;
             let context = ParsingContext::List {
@@ -67,7 +67,7 @@ impl NoneContext {
 
         // Indented Code Block 시작 감지 (List 후에 체크 - 명세상 List가 우선)
         if let Ok(CodeBlockIndentedStartReason::Started(start)) =
-            try_start_code_block_indented(current_line)
+            try_start_code_block_indented(line)
         {
             let context = ParsingContext::CodeBlockIndented {
                 pending_lines: vec![start.content],
@@ -78,7 +78,7 @@ impl NoneContext {
 
         // 나머지는 Paragraph 시작
         let context = ParsingContext::Paragraph {
-            pending_lines: vec![current_line.trim().to_string()],
+            pending_lines: vec![line.trim().to_string()],
         };
         (vec![], context)
     }
