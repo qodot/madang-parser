@@ -22,17 +22,14 @@ use code_block_fenced::{
 use code_block_indented::try_start as try_start_code_block_indented;
 use context::{
     CodeBlockFencedStart, CodeBlockFencedStartReason, CodeBlockIndentedStartReason,
-    HeadingSetextStartReason, ItemLine, ListContinueReason, ListEndReason, ListItemStart,
-    ListItemStartReason, ParsingContext,
+    HeadingSetextStartReason, ItemLine, LineResult, ListContinueReason, ListEndReason,
+    ListItemStart, ListItemStartReason, NoneContext, ParsingContext,
 };
 use heading_setext::try_start as try_start_heading_setext;
 use helpers::{calculate_indent, remove_indent, trim_blank_lines};
 
 /// 파서 상태: (완성된 노드들, 현재 컨텍스트) - fold 누적용
 type ParserState = (Vec<Node>, ParsingContext);
-
-/// 한 줄 처리 결과: (새로 완성된 노드들, 새 컨텍스트) - 개별 함수 반환용
-type LineResult = (Vec<Node>, ParsingContext);
 
 /// 문서 전체 파싱
 pub fn parse(input: &str) -> Node {
@@ -42,7 +39,7 @@ pub fn parse(input: &str) -> Node {
 
     // fold: 각 줄을 처리하며 상태 전이
     let (children, final_context) = input.lines().fold(
-        (Vec::new(), ParsingContext::None),
+        (Vec::new(), ParsingContext::None(NoneContext)),
         |(children, context), line| process_line(line, context, children),
     );
 
@@ -55,7 +52,7 @@ pub fn parse(input: &str) -> Node {
 /// 한 줄 처리 후 새 상태 반환
 fn process_line(line: &str, context: ParsingContext, nodes: Vec<Node>) -> ParserState {
     let (new_nodes, new_context) = match context {
-        ParsingContext::None => process_line_in_none(line),
+        ParsingContext::None(ctx) => ctx.parse(line),
         ParsingContext::CodeBlockFenced { start, content } => {
             process_line_in_code_block(line, start, content)
         }
@@ -89,74 +86,6 @@ fn extend_nodes(mut nodes: Vec<Node>, new_nodes: Vec<Node>) -> Vec<Node> {
     nodes
 }
 
-/// None 상태에서 줄 처리: 새 블록 시작 감지
-/// 반환: (새로 완성된 노드들, 새 컨텍스트)
-fn process_line_in_none(current_line: &str) -> LineResult {
-    // 빈 줄은 무시
-    if current_line.trim().is_empty() {
-        return (vec![], ParsingContext::None);
-    }
-
-    // Fenced Code Block 시작 감지
-    if let Ok(CodeBlockFencedStartReason::Started(start)) = try_start_code_block_fenced(current_line) {
-        let context = ParsingContext::CodeBlockFenced {
-            start,
-            content: Vec::new(),
-        };
-        return (vec![], context);
-    }
-
-    // 한 줄 블록들 시도 (Thematic Break, ATX Heading)
-    let indent = calculate_indent(current_line);
-    let trimmed = current_line.trim();
-
-    if let Some(node) = thematic_break::parse(trimmed, indent) {
-        return (vec![node], ParsingContext::None);
-    }
-
-    if let Some(node) = heading::parse(trimmed, indent) {
-        return (vec![node], ParsingContext::None);
-    }
-
-    // Blockquote 시작 감지 (> 로 시작하고 들여쓰기 3칸 이하)
-    if trimmed.starts_with('>') && indent <= 3 {
-        let context = ParsingContext::Blockquote {
-            pending_lines: vec![trimmed.to_string()],
-        };
-        return (vec![], context);
-    }
-
-    // List 시작 감지
-    if let Ok(ListItemStartReason::Started(start)) = list_item::try_start(current_line) {
-        let content = start.content.clone();
-        let content_indent = start.content_indent;
-        let context = ParsingContext::List {
-            first_item_start: start,
-            items: Vec::new(),
-            current_item_lines: vec![ItemLine::text(content)],
-            current_content_indent: content_indent,
-            tight: true,
-            pending_blank_count: 0,
-        };
-        return (vec![], context);
-    }
-
-    // Indented Code Block 시작 감지 (List 후에 체크 - 명세상 List가 우선)
-    if let Ok(CodeBlockIndentedStartReason::Started(start)) = try_start_code_block_indented(current_line) {
-        let context = ParsingContext::CodeBlockIndented {
-            pending_lines: vec![start.content],
-            pending_blank_count: 0,
-        };
-        return (vec![], context);
-    }
-
-    // 나머지는 Paragraph 시작
-    let context = ParsingContext::Paragraph {
-        pending_lines: vec![current_line.trim().to_string()],
-    };
-    (vec![], context)
-}
-
 /// Code Block 상태에서 줄 처리
 /// 반환: (새로 완성된 노드들, 새 컨텍스트)
 fn process_line_in_code_block(
@@ -171,7 +100,7 @@ fn process_line_in_code_block(
             info: start.info,
             content: content_str,
         };
-        return (vec![node], ParsingContext::None);
+        return (vec![node], ParsingContext::None(NoneContext));
     }
 
     // 코드 줄 추가
@@ -188,7 +117,7 @@ fn process_line_in_paragraph(current_line: &str, pending_lines: Vec<String>) -> 
     // 빈 줄이면 Paragraph 종료
     if current_line.trim().is_empty() {
         let text = pending_lines.join("\n");
-        return (vec![paragraph::parse(&text)], ParsingContext::None);
+        return (vec![paragraph::parse(&text)], ParsingContext::None(NoneContext));
     }
 
     // Fenced Code Block 시작이면 Paragraph 종료 후 Code Block 시작
@@ -212,19 +141,19 @@ fn process_line_in_paragraph(current_line: &str, pending_lines: Vec<String>) -> 
             level: start.level.to_level(),
             children: vec![Node::Text(text)],
         };
-        return (vec![node], ParsingContext::None);
+        return (vec![node], ParsingContext::None(NoneContext));
     }
 
     // Thematic Break이면 Paragraph 종료
     if let Some(thematic_node) = thematic_break::parse(trimmed, indent) {
         let text = pending_lines.join("\n");
-        return (vec![paragraph::parse(&text), thematic_node], ParsingContext::None);
+        return (vec![paragraph::parse(&text), thematic_node], ParsingContext::None(NoneContext));
     }
 
     // ATX Heading이면 Paragraph 종료
     if let Some(heading_node) = heading::parse(trimmed, indent) {
         let text = pending_lines.join("\n");
-        return (vec![paragraph::parse(&text), heading_node], ParsingContext::None);
+        return (vec![paragraph::parse(&text), heading_node], ParsingContext::None(NoneContext));
     }
 
     // Blockquote 시작이면 Paragraph 종료 후 Blockquote 시작
@@ -282,7 +211,7 @@ fn process_line_in_list(
         // 종료: List 노드 생성 + 현재 줄 재처리
         Ok(ListEndReason::Reprocess) => {
             let list_node = build_list_node(&first_item_start, items, current_item_lines, tight);
-            let (more_nodes, new_context) = process_line_in_none(current_line);
+            let (more_nodes, new_context) = NoneContext.parse(current_line);
             let mut nodes = vec![list_node];
             nodes.extend(more_nodes);
             (nodes, new_context)
@@ -474,7 +403,7 @@ fn process_line_in_code_block_indented(
             let content = trim_blank_lines(pending_lines);
             let code_node = Node::CodeBlock { info: None, content };
             // 현재 줄을 다시 처리
-            let (more_nodes, new_context) = process_line_in_none(current_line);
+            let (more_nodes, new_context) = NoneContext.parse(current_line);
             let mut nodes = vec![code_node];
             nodes.extend(more_nodes);
             (nodes, new_context)
@@ -498,10 +427,10 @@ fn process_line_in_blockquote(current_line: &str, pending_lines: Vec<String>) ->
     if trimmed.is_empty() {
         let text = pending_lines.join("\n");
         if let Some(node) = blockquote::parse(&text, 0, parse_block_simple) {
-            return (vec![node], ParsingContext::None);
+            return (vec![node], ParsingContext::None(NoneContext));
         }
         // blockquote 파싱 실패시 (이론상 발생 안함)
-        return (vec![], ParsingContext::None);
+        return (vec![], ParsingContext::None(NoneContext));
     }
 
     // Fenced Code Block 시작이면 Blockquote 종료
@@ -524,7 +453,7 @@ fn process_line_in_blockquote(current_line: &str, pending_lines: Vec<String>) ->
             .map(|node| vec![node])
             .unwrap_or_default();
         nodes.push(thematic_node);
-        return (nodes, ParsingContext::None);
+        return (nodes, ParsingContext::None(NoneContext));
     }
 
     // ATX Heading이면 Blockquote 종료
@@ -534,7 +463,7 @@ fn process_line_in_blockquote(current_line: &str, pending_lines: Vec<String>) ->
             .map(|node| vec![node])
             .unwrap_or_default();
         nodes.push(heading_node);
-        return (nodes, ParsingContext::None);
+        return (nodes, ParsingContext::None(NoneContext));
     }
 
     // > 로 시작하거나 lazy continuation이면 Blockquote 계속
@@ -546,7 +475,7 @@ fn process_line_in_blockquote(current_line: &str, pending_lines: Vec<String>) ->
 /// 마지막 컨텍스트 마무리
 fn finalize_context(context: ParsingContext, nodes: Vec<Node>) -> Vec<Node> {
     match context {
-        ParsingContext::None => nodes,
+        ParsingContext::None(NoneContext) => nodes,
         ParsingContext::CodeBlockFenced { start, content } => {
             let content_str = content.join("\n");
             let node = Node::CodeBlock {

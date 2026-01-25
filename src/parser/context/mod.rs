@@ -2,7 +2,14 @@
 //!
 //! 시작 정보(Start)와 파싱 상태(ParsingContext)를 분리하여 관리합니다.
 
-use crate::node::ListType;
+mod none_context;
+
+pub use none_context::NoneContext;
+
+use crate::node::{ListType, Node};
+
+/// 한 줄 처리 결과: (새로 완성된 노드들, 새 컨텍스트)
+pub type LineResult = (Vec<Node>, ParsingContext);
 
 // =============================================================================
 // Fenced Code Block
@@ -94,9 +101,10 @@ impl ListMarker {
     pub fn is_same_type(&self, other: &ListMarker) -> bool {
         match (self, other) {
             (ListMarker::Bullet(c1), ListMarker::Bullet(c2)) => c1 == c2,
-            (ListMarker::Ordered { delimiter: d1, .. }, ListMarker::Ordered { delimiter: d2, .. }) => {
-                d1 == d2
-            }
+            (
+                ListMarker::Ordered { delimiter: d1, .. },
+                ListMarker::Ordered { delimiter: d2, .. },
+            ) => d1 == d2,
             _ => false,
         }
     }
@@ -138,7 +146,13 @@ impl ListItemStart {
     }
 
     #[cfg(test)]
-    pub fn ordered(start: usize, delimiter: char, indent: usize, content_indent: usize, content: &str) -> Self {
+    pub fn ordered(
+        start: usize,
+        delimiter: char,
+        indent: usize,
+        content_indent: usize,
+        content: &str,
+    ) -> Self {
         Self {
             marker: ListMarker::Ordered { start, delimiter },
             indent,
@@ -187,15 +201,24 @@ impl ItemLine {
     }
 
     pub fn text(content: String) -> Self {
-        Self { content, text_only: false }
+        Self {
+            content,
+            text_only: false,
+        }
     }
 
     pub fn text_only(content: String) -> Self {
-        Self { content, text_only: true }
+        Self {
+            content,
+            text_only: true,
+        }
     }
 
     pub fn blank() -> Self {
-        Self { content: String::new(), text_only: false }
+        Self {
+            content: String::new(),
+            text_only: false,
+        }
     }
 }
 
@@ -294,7 +317,7 @@ pub enum HeadingSetextNotStartReason {
 /// 파싱 중인 컨텍스트 (상태 기계의 상태)
 pub enum ParsingContext {
     /// 새 블록 시작 대기
-    None,
+    None(NoneContext),
 
     /// Fenced Code Block 파싱 중
     CodeBlockFenced {
