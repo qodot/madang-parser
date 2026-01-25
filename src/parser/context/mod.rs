@@ -6,10 +6,10 @@ mod none_context;
 
 pub use none_context::NoneContext;
 
-use crate::node::{ListType, Node};
+use crate::node::{BlockNode, ListType};
 
 /// 한 줄 처리 결과: (새로 완성된 노드들, 새 컨텍스트)
-pub type LineResult = (Vec<Node>, ParsingContext);
+pub type LineResult = (Vec<BlockNode>, ParsingContext);
 
 // =============================================================================
 // Fenced Code Block

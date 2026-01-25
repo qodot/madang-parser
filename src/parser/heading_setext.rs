@@ -45,7 +45,7 @@ pub fn try_start(line: &str, indent: usize) -> Result<HeadingSetextStartReason, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::node::Node;
+    use crate::node::{BlockNode, InlineNode};
     use rstest::rstest;
 
     /// try_start 유닛 테스트
@@ -102,47 +102,47 @@ mod tests {
     /// Setext Heading 통합 테스트
     #[rstest]
     // Example 80: 기본 케이스
-    #[case("Foo\n===", vec![Node::heading(1, vec![Node::text("Foo")])])]
-    #[case("Foo\n---", vec![Node::heading(2, vec![Node::text("Foo")])])]
+    #[case("Foo\n===", vec![BlockNode::heading(1, vec![InlineNode::text("Foo")])])]
+    #[case("Foo\n---", vec![BlockNode::heading(2, vec![InlineNode::text("Foo")])])]
     // Example 81: 여러 줄 제목
-    #[case("Foo\nbar\n===", vec![Node::heading(1, vec![Node::text("Foo\nbar")])])]
-    #[case("Foo\nbar\nbaz\n---", vec![Node::heading(2, vec![Node::text("Foo\nbar\nbaz")])])]
+    #[case("Foo\nbar\n===", vec![BlockNode::heading(1, vec![InlineNode::text("Foo\nbar")])])]
+    #[case("Foo\nbar\nbaz\n---", vec![BlockNode::heading(2, vec![InlineNode::text("Foo\nbar\nbaz")])])]
     // Example 83: 다양한 밑줄 길이
-    #[case("Foo\n=", vec![Node::heading(1, vec![Node::text("Foo")])])]
-    #[case("Foo\n-------------------------", vec![Node::heading(2, vec![Node::text("Foo")])])]
-    #[case("Foo\n==========", vec![Node::heading(1, vec![Node::text("Foo")])])]
+    #[case("Foo\n=", vec![BlockNode::heading(1, vec![InlineNode::text("Foo")])])]
+    #[case("Foo\n-------------------------", vec![BlockNode::heading(2, vec![InlineNode::text("Foo")])])]
+    #[case("Foo\n==========", vec![BlockNode::heading(1, vec![InlineNode::text("Foo")])])]
     // Example 84: 제목/밑줄 들여쓰기
-    #[case("   Foo\n---", vec![Node::heading(2, vec![Node::text("Foo")])])]
-    #[case("  Foo\n-----", vec![Node::heading(2, vec![Node::text("Foo")])])]
-    #[case("  Foo\n  ===", vec![Node::heading(1, vec![Node::text("Foo")])])]
+    #[case("   Foo\n---", vec![BlockNode::heading(2, vec![InlineNode::text("Foo")])])]
+    #[case("  Foo\n-----", vec![BlockNode::heading(2, vec![InlineNode::text("Foo")])])]
+    #[case("  Foo\n  ===", vec![BlockNode::heading(1, vec![InlineNode::text("Foo")])])]
     // Example 86: 밑줄에 1-3칸 들여쓰기 허용
-    #[case("Foo\n   ----", vec![Node::heading(2, vec![Node::text("Foo")])])]
-    #[case("Foo\n ===", vec![Node::heading(1, vec![Node::text("Foo")])])]
-    #[case("Foo\n  ===", vec![Node::heading(1, vec![Node::text("Foo")])])]
-    #[case("Foo\n   ===", vec![Node::heading(1, vec![Node::text("Foo")])])]
-    #[case("Foo\n ---", vec![Node::heading(2, vec![Node::text("Foo")])])]
+    #[case("Foo\n   ----", vec![BlockNode::heading(2, vec![InlineNode::text("Foo")])])]
+    #[case("Foo\n ===", vec![BlockNode::heading(1, vec![InlineNode::text("Foo")])])]
+    #[case("Foo\n  ===", vec![BlockNode::heading(1, vec![InlineNode::text("Foo")])])]
+    #[case("Foo\n   ===", vec![BlockNode::heading(1, vec![InlineNode::text("Foo")])])]
+    #[case("Foo\n ---", vec![BlockNode::heading(2, vec![InlineNode::text("Foo")])])]
     // Example 89: 제목 뒤 trailing spaces (trim됨)
-    #[case("Foo  \n-----", vec![Node::heading(2, vec![Node::text("Foo")])])]
+    #[case("Foo  \n-----", vec![BlockNode::heading(2, vec![InlineNode::text("Foo")])])]
     // 추가 케이스
-    #[case("Foo\n-", vec![Node::heading(2, vec![Node::text("Foo")])])]
-    #[case("Foo\n----------", vec![Node::heading(2, vec![Node::text("Foo")])])]
-    #[case("Foo\n===   ", vec![Node::heading(1, vec![Node::text("Foo")])])]
-    #[case("Foo\n---   ", vec![Node::heading(2, vec![Node::text("Foo")])])]
-    #[case(" Foo\n===", vec![Node::heading(1, vec![Node::text("Foo")])])]
-    #[case("  Foo\n===", vec![Node::heading(1, vec![Node::text("Foo")])])]
+    #[case("Foo\n-", vec![BlockNode::heading(2, vec![InlineNode::text("Foo")])])]
+    #[case("Foo\n----------", vec![BlockNode::heading(2, vec![InlineNode::text("Foo")])])]
+    #[case("Foo\n===   ", vec![BlockNode::heading(1, vec![InlineNode::text("Foo")])])]
+    #[case("Foo\n---   ", vec![BlockNode::heading(2, vec![InlineNode::text("Foo")])])]
+    #[case(" Foo\n===", vec![BlockNode::heading(1, vec![InlineNode::text("Foo")])])]
+    #[case("  Foo\n===", vec![BlockNode::heading(1, vec![InlineNode::text("Foo")])])]
     // Setext Heading이 아닌 케이스
     // 밑줄에 4칸 이상 들여쓰기 → Paragraph continuation
-    #[case("Foo\n    ===", vec![Node::para(vec![Node::text("Foo\n===")])])]
+    #[case("Foo\n    ===", vec![BlockNode::paragraph(vec![InlineNode::text("Foo\n===")])])]
     // 빈 줄 후 밑줄 → 두 개의 Paragraph
-    #[case("Foo\n\n===", vec![Node::para(vec![Node::text("Foo")]), Node::para(vec![Node::text("===")])])]
+    #[case("Foo\n\n===", vec![BlockNode::paragraph(vec![InlineNode::text("Foo")]), BlockNode::paragraph(vec![InlineNode::text("===")])])]
     // 밑줄만 단독 (=) → Paragraph
-    #[case("===", vec![Node::para(vec![Node::text("===")])])]
+    #[case("===", vec![BlockNode::paragraph(vec![InlineNode::text("===")])])]
     // 밑줄만 단독 (-) → Thematic Break
-    #[case("---", vec![Node::ThematicBreak])]
+    #[case("---", vec![BlockNode::thematic_break()])]
     // 밑줄 뒤 비공백 문자 → Paragraph continuation
-    #[case("Foo\n=== bar", vec![Node::para(vec![Node::text("Foo\n=== bar")])])]
-    fn test_setext_heading(#[case] input: &str, #[case] expected: Vec<Node>) {
+    #[case("Foo\n=== bar", vec![BlockNode::paragraph(vec![InlineNode::text("Foo\n=== bar")])])]
+    fn test_setext_heading(#[case] input: &str, #[case] expected: Vec<BlockNode>) {
         let doc = crate::parse(input);
-        assert_eq!(doc.children(), &expected);
+        assert_eq!(doc.children, expected);
     }
 }
