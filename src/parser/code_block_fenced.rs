@@ -141,169 +141,74 @@ pub fn parse_text(text: &str) -> Option<BlockNode> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::node::BlockNode;
+    use crate::node::{BlockNode, InlineNode};
+    use crate::parser::parse;
     use rstest::rstest;
-
-    // =============================================================================
-    // parse(line, None) 테스트 - 시작 줄 판단
-    // =============================================================================
 
     #[rstest]
     // Example 119: 백틱 펜스
-    #[case("```", Some(('`', 3, None, 0)))]
-    #[case("````", Some(('`', 4, None, 0)))]
-    #[case("`````", Some(('`', 5, None, 0)))]
+    #[case("```\n<\n >\n```", vec![BlockNode::code_block(None, "<\n >")])]
     // Example 120: 틸드 펜스
-    #[case("~~~", Some(('~', 3, None, 0)))]
-    #[case("~~~~", Some(('~', 4, None, 0)))]
-    #[case("~~~~~", Some(('~', 5, None, 0)))]
-    // Example 142-143: info string
-    #[case("```rust", Some(('`', 3, Some("rust"), 0)))]
-    #[case("~~~ python", Some(('~', 3, Some("python"), 0)))]
-    #[case("```  rust  ", Some(('`', 3, Some("rust"), 0)))]
-    #[case("```rust python", Some(('`', 3, Some("rust python"), 0)))]
-    // Example 131-133: 들여쓰기 0-3칸
-    #[case(" ```", Some(('`', 3, None, 1)))]
-    #[case("  ```", Some(('`', 3, None, 2)))]
-    #[case("   ```", Some(('`', 3, None, 3)))]
-    #[case("   ```rust", Some(('`', 3, Some("rust"), 3)))]
-    // 펜스가 아닌 경우
-    #[case("``", None)]
-    #[case("~~", None)]
-    #[case("    ```", None)]  // 4칸 들여쓰기
-    #[case("code", None)]
-    #[case("", None)]
-    #[case("  ", None)]
-    fn test_parse_start(
-        #[case] input: &str,
-        #[case] expected: Option<(char, usize, Option<&str>, usize)>,
-    ) {
-        let result = parse(input, None);
-        match expected {
-            Some((expected_char, expected_len, expected_info, expected_indent)) => {
-                if let Ok(CodeBlockFencedOk::Start(start)) = result {
-                    assert_eq!(start.fence_char, expected_char, "fence_char");
-                    assert_eq!(start.fence_len, expected_len, "fence_len");
-                    assert_eq!(start.info.as_deref(), expected_info, "info");
-                    assert_eq!(start.indent, expected_indent, "indent");
-                } else {
-                    panic!("시작이어야 함: {:?}, got {:?}", input, result);
-                }
-            }
-            None => {
-                assert!(
-                    result.is_err(),
-                    "시작이 아니어야 함: {:?}, got {:?}",
-                    input,
-                    result
-                );
-            }
-        }
-    }
-
-    // =============================================================================
-    // parse(line, Some(&start)) 테스트 - 종료/내용 판단
-    // =============================================================================
-
-    #[rstest]
-    // Example 124-125: 유효한 닫는 펜스
-    #[case("```", '`', 3, true)]
-    #[case("````", '`', 3, true)]
-    #[case("`````", '`', 3, true)]
-    #[case("~~~", '~', 3, true)]
-    #[case("~~~~", '~', 3, true)]
-    // 들여쓰기 0-3칸
-    #[case(" ```", '`', 3, true)]
-    #[case("  ```", '`', 3, true)]
-    #[case("   ```", '`', 3, true)]
-    // 펜스 뒤 공백만 허용
-    #[case("```  ", '`', 3, true)]
-    #[case("~~~   ", '~', 3, true)]
-    // Example 139: 유효하지 않은 닫는 펜스 → Content
-    #[case("``", '`', 3, false)]
-    #[case("```", '`', 4, false)]
-    // Example 122-123: 문자 불일치
-    #[case("~~~", '`', 3, false)]
-    #[case("```", '~', 3, false)]
-    // 4칸 들여쓰기
-    #[case("    ```", '`', 3, false)]
-    // Example 140: 펜스 뒤 텍스트
-    #[case("```code", '`', 3, false)]
-    #[case("``` x", '`', 3, false)]
-    fn test_parse_continue(
-        #[case] input: &str,
-        #[case] fence_char: char,
-        #[case] fence_len: usize,
-        #[case] is_end: bool,
-    ) {
-        let start = CodeBlockFencedStart {
-            fence_char,
-            fence_len,
-            info: None,
-            indent: 0,
-        };
-        let result = parse(input, Some(&start));
-        if is_end {
-            assert!(
-                matches!(result, Ok(CodeBlockFencedOk::End)),
-                "종료여야 함: {:?}, got {:?}",
-                input,
-                result
-            );
-        } else {
-            assert!(
-                matches!(result, Ok(CodeBlockFencedOk::Content(_))),
-                "내용이어야 함: {:?}, got {:?}",
-                input,
-                result
-            );
-        }
-    }
-
-    // =============================================================================
-    // 통합 테스트 (CommonMark Example 기반)
-    // =============================================================================
-
-    #[rstest]
-    // Example 119-120: 기본 백틱/틸드 펜스
-    #[case("```\ncode\n```", vec![BlockNode::code_block(None, "code")])]
-    #[case("~~~\ncode\n~~~", vec![BlockNode::code_block(None, "code")])]
-    #[case("```\nline1\nline2\n```", vec![BlockNode::code_block(None, "line1\nline2")])]
-    // Example 122-123: 다른 문자 펜스는 닫히지 않음
-    #[case("~~~\ncode\n```", vec![BlockNode::code_block(None, "code\n```")])]
-    #[case("```\ncode\n~~~", vec![BlockNode::code_block(None, "code\n~~~")])]
-    // Example 124-125: 닫는 펜스가 더 길어도 OK
-    #[case("`````\ncode\n`````", vec![BlockNode::code_block(None, "code")])]
-    #[case("```\ncode\n`````", vec![BlockNode::code_block(None, "code")])]
-    #[case("~~~~~\ncode\n~~~~~", vec![BlockNode::code_block(None, "code")])]
-    // Example 126, 130: 빈 내용
-    #[case("```\n\n```", vec![BlockNode::code_block(None, "")])]
-    // Example 127: 닫는 펜스 없음 → EOF까지
-    #[case("```\ncode", vec![BlockNode::code_block(None, "code")])]
-    #[case("```rust\ncode", vec![BlockNode::code_block(Some("rust"), "code")])]
-    #[case("```\nline1\nline2", vec![BlockNode::code_block(None, "line1\nline2")])]
-    #[case("~~~\ncode", vec![BlockNode::code_block(None, "code")])]
-    // Example 131-133: 여는 펜스 들여쓰기 처리
-    #[case("  ```\n  code\n  ```", vec![BlockNode::code_block(None, "code")])]
-    #[case("   ```\n   code\n   ```", vec![BlockNode::code_block(None, "code")])]
-    #[case("  ```\n    code\n  ```", vec![BlockNode::code_block(None, "  code")])]
-    #[case("  ```\ncode\n  ```", vec![BlockNode::code_block(None, "code")])]
-    // Example 139: 닫는 펜스가 짧으면 무효
-    #[case("`````\ncode\n```", vec![BlockNode::code_block(None, "code\n```")])]
-    #[case("~~~~~\ncode\n~~~", vec![BlockNode::code_block(None, "code\n~~~")])]
-    // Example 142-143: info string
-    #[case("```rust\ncode\n```", vec![BlockNode::code_block(Some("rust"), "code")])]
-    #[case("``` rust \ncode\n```", vec![BlockNode::code_block(Some("rust"), "code")])]
-    #[case("```rust python\ncode\n```", vec![BlockNode::code_block(Some("rust python"), "code")])]
-    #[case("~~~rust\ncode\n~~~", vec![BlockNode::code_block(Some("rust"), "code")])]
-    // Example 144: 특수 문자 info string
-    #[case("```;\n````", vec![BlockNode::code_block(Some(";"), "")])]
-    // 추가: 빈 줄 포함
-    #[case("```\nline1\n\nline2\n```", vec![BlockNode::code_block(None, "line1\n\nline2")])]
-    #[case("```rust\nfn main() {\n\n    println!(\"hi\");\n}\n```", vec![BlockNode::code_block(Some("rust"), "fn main() {\n\n    println!(\"hi\");\n}")])]
-    fn test_code_block_fenced(#[case] input: &str, #[case] expected: Vec<BlockNode>) {
-        let doc = crate::parse(input);
+    #[case("~~~\n<\n >\n~~~", vec![BlockNode::code_block(None, "<\n >")])]
+    // Example 122: 백틱으로 시작, 내부에 틸드, 백틱으로 끝
+    #[case("```\naaa\n~~~\n```", vec![BlockNode::code_block(None, "aaa\n~~~")])]
+    // Example 123: 틸드로 시작, 내부에 백틱, 틸드로 끝
+    #[case("~~~\naaa\n```\n~~~", vec![BlockNode::code_block(None, "aaa\n```")])]
+    // Example 124: 닫는 펜스가 더 길어도 OK (짧은 펜스는 내용)
+    #[case("````\naaa\n```\n``````", vec![BlockNode::code_block(None, "aaa\n```")])]
+    // Example 125: 틸드 버전
+    #[case("~~~~\naaa\n~~~\n~~~~", vec![BlockNode::code_block(None, "aaa\n~~~")])]
+    // Example 126: 닫히지 않은 코드 블록 (빈 내용)
+    #[case("```", vec![BlockNode::code_block(None, "")])]
+    // Example 127: 닫히지 않은 코드 블록 (내용 있음)
+    #[case("`````\n\n```\naaa", vec![BlockNode::code_block(None, "\n```\naaa")])]
+    // Example 129: 빈 줄과 공백만 있는 내용
+    #[case("```\n\n  \n```", vec![BlockNode::code_block(None, "\n  ")])]
+    // Example 130: 빈 코드 블록
+    #[case("```\n```", vec![BlockNode::code_block(None, "")])]
+    // Example 131: 들여쓰기 1칸 (내용에서 1칸 제거)
+    #[case(" ```\n aaa\naaa\n```", vec![BlockNode::code_block(None, "aaa\naaa")])]
+    // Example 132: 들여쓰기 2칸 (내용에서 2칸 제거)
+    #[case("  ```\naaa\n  aaa\naaa\n  ```", vec![BlockNode::code_block(None, "aaa\naaa\naaa")])]
+    // Example 133: 들여쓰기 3칸 (내용에서 3칸 제거)
+    #[case("   ```\n   aaa\n    aaa\n  aaa\n   ```", vec![BlockNode::code_block(None, "aaa\n aaa\naaa")])]
+    // Example 134: 4칸 들여쓰기는 indented code block
+    #[case("    ```\n    aaa\n    ```", vec![BlockNode::code_block(None, "```\naaa\n```")])]
+    // Example 135: 닫는 펜스 들여쓰기 다름 (0-3칸은 OK)
+    #[case("```\naaa\n  ```", vec![BlockNode::code_block(None, "aaa")])]
+    // Example 136: 닫는 펜스 들여쓰기 다름 (0-3칸은 OK)
+    #[case("   ```\naaa\n  ```", vec![BlockNode::code_block(None, "aaa")])]
+    // Example 137: 닫는 펜스 4칸 들여쓰기는 내용
+    #[case("```\naaa\n    ```", vec![BlockNode::code_block(None, "aaa\n    ```")])]
+    // Example 139: 닫는 펜스 뒤 공백+문자는 내용
+    #[case("~~~~~~\naaa\n~~~ ~~", vec![BlockNode::code_block(None, "aaa\n~~~ ~~")])]
+    // Example 140: paragraph 사이의 코드 블록
+    #[case("foo\n```\nbar\n```\nbaz", vec![BlockNode::paragraph(vec![InlineNode::text("foo")]), BlockNode::code_block(None, "bar"), BlockNode::paragraph(vec![InlineNode::text("baz")])])]
+    // Example 142: info string (ruby)
+    #[case("```ruby\ndef foo(x)\n  return 3\nend\n```", vec![BlockNode::code_block(Some("ruby"), "def foo(x)\n  return 3\nend")])]
+    // Example 143: info string 앞뒤 공백 제거
+    #[case("~~~~    ruby startline=3 $%@#$\ndef foo(x)\n  return 3\nend\n~~~~~~~", vec![BlockNode::code_block(Some("ruby startline=3 $%@#$"), "def foo(x)\n  return 3\nend")])]
+    // Example 144: info string 특수 문자
+    #[case("````;\n````", vec![BlockNode::code_block(Some(";"), "")])]
+    // Example 146: 틸드 펜스 info string에 백틱 허용
+    #[case("~~~ aa ``` ~~~\nfoo\n~~~", vec![BlockNode::code_block(Some("aa ``` ~~~"), "foo")])]
+    // Example 147: 닫는 펜스에 info string은 내용
+    #[case("```\n``` aaa\n```", vec![BlockNode::code_block(None, "``` aaa")])]
+    fn test_fenced_code_block(#[case] input: &str, #[case] expected: Vec<BlockNode>) {
+        let doc = parse(input);
         assert_eq!(doc.children, expected);
     }
+
+    #[rstest]
+    // Example 128: blockquote 내부 닫히지 않은 코드 블록
+    #[case("> ```\n> aaa\n\nbbb", vec![BlockNode::blockquote(vec![BlockNode::code_block(None, "aaa")]), BlockNode::paragraph(vec![InlineNode::text("bbb")])])]
+    // Example 141: setext heading + code block + heading
+    #[case("foo\n---\n~~~\nbar\n~~~\n# baz", vec![BlockNode::heading(2, vec![InlineNode::text("foo")]), BlockNode::code_block(None, "bar"), BlockNode::heading(1, vec![InlineNode::text("baz")])])]
+    #[ignore = "setext heading 또는 blockquote 내 코드 블록 미지원"]
+    fn test_fenced_code_block_pending(#[case] input: &str, #[case] expected: Vec<BlockNode>) {
+        let doc = parse(input);
+        assert_eq!(doc.children, expected);
+    }
+
+    // TODO: Example 121, 138, 145는 inline code 구현 시 추가
 }
