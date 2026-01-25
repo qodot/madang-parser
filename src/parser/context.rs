@@ -171,6 +171,34 @@ pub enum ListEndReason {
     Reprocess,
 }
 
+/// 리스트 아이템 내용 줄
+#[derive(Debug, Clone, PartialEq)]
+pub struct ItemLine {
+    /// 내용
+    pub content: String,
+    /// true면 텍스트 전용 (리스트 마커처럼 보여도 재파싱 시 리스트 아님)
+    /// Example 303: 4칸 들여쓰기된 마커는 텍스트 전용
+    pub text_only: bool,
+}
+
+impl ItemLine {
+    pub fn new(content: String, text_only: bool) -> Self {
+        Self { content, text_only }
+    }
+
+    pub fn text(content: String) -> Self {
+        Self { content, text_only: false }
+    }
+
+    pub fn text_only(content: String) -> Self {
+        Self { content, text_only: true }
+    }
+
+    pub fn blank() -> Self {
+        Self { content: String::new(), text_only: false }
+    }
+}
+
 /// List 계속 사유
 #[derive(Debug, Clone, PartialEq)]
 pub enum ListContinueReason {
@@ -179,7 +207,7 @@ pub enum ListContinueReason {
     /// 새 아이템
     NewItem(ListItemStart),
     /// Continuation line (같은 아이템에 내용 추가)
-    ContinuationLine(String),
+    ContinuationLine(ItemLine),
 }
 
 // =============================================================================
@@ -287,9 +315,11 @@ pub enum ParsingContext {
         /// 첫 아이템의 시작 정보 (리스트 타입 결정용)
         first_item_start: ListItemStart,
         /// 완성된 아이템들의 내용
-        items: Vec<Vec<String>>,
+        items: Vec<Vec<ItemLine>>,
         /// 현재 아이템의 줄들
-        current_item_lines: Vec<String>,
+        current_item_lines: Vec<ItemLine>,
+        /// 현재 아이템의 content_indent (continuation line 판단용)
+        current_content_indent: usize,
         /// tight 리스트 여부 (아이템 간 빈 줄 없음)
         tight: bool,
         /// 대기 중인 빈 줄 개수 (continuation 시 내용에 추가)

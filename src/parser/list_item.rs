@@ -6,8 +6,8 @@
 //! - Continuation line 판별
 
 use super::context::{
-    ListContinueReason, ListEndReason, ListItemNotStartReason, ListItemStart, ListItemStartReason,
-    ListMarker,
+    ItemLine, ListContinueReason, ListEndReason, ListItemNotStartReason, ListItemStart,
+    ListItemStartReason, ListMarker,
 };
 use super::helpers::count_leading_char;
 
@@ -33,33 +33,67 @@ pub(crate) fn try_start(line: &str) -> Result<ListItemStartReason, ListItemNotSt
 /// List 종료 여부 확인
 /// Ok: 종료 (Reprocess)
 /// Err: 계속 (Blank, NewItem 또는 ContinuationLine)
+///
+/// # Arguments
+/// * `first_content_indent` - 첫 아이템의 content_indent (continuation 판단용)
+/// * `current_content_indent` - 현재 아이템의 content_indent (새 아이템 판단용)
+///
+/// Example 301: 새 아이템 판단은 current_content_indent 기준 (0-3칸은 같은 레벨)
+/// Example 303: continuation 판단은 first_content_indent 기준 (4칸 이상은 내용)
 pub(crate) fn try_end(
     line: &str,
     marker: &ListMarker,
-    content_indent: usize,
+    first_content_indent: usize,
+    current_content_indent: usize,
 ) -> Result<ListEndReason, ListContinueReason> {
     // 빈 줄 처리 (항상 계속, 개수는 호출자가 추적)
     if line.trim().is_empty() {
         return Err(ListContinueReason::Blank);
     }
 
-    // Continuation line: content_indent 이상 들여쓰기 확인
-    // 중요: 새 아이템 체크보다 먼저! 중첩 리스트를 위해 필수.
-    // 예: "- foo\n  - bar"에서 "  - bar"는 continuation line이어야 함
     let indent = count_leading_char(line, ' ');
-    if indent >= content_indent {
-        let content = line[content_indent..].to_string();
-        return Err(ListContinueReason::ContinuationLine(content));
-    }
 
-    // 같은 마커 타입의 List Item이면 새 아이템으로 계속
-    if let Ok(ListItemStartReason::Started(new_start)) = try_start(line) {
-        if marker.is_same_type(&new_start.marker) {
-            return Err(ListContinueReason::NewItem(new_start));
+    // 1. 새 아이템 체크 (Example 301 지원)
+    // current_content_indent 미만 들여쓰기에서만 새 아이템 가능
+    if indent < current_content_indent {
+        // 같은 마커 타입의 List Item이면 새 아이템으로 계속
+        match try_start(line) {
+            Ok(ListItemStartReason::Started(new_start)) => {
+                if marker.is_same_type(&new_start.marker) {
+                    return Err(ListContinueReason::NewItem(new_start));
+                }
+                // 다른 마커 타입이면 리스트 종료
+                return Ok(ListEndReason::Reprocess);
+            }
+            Err(ListItemNotStartReason::CodeBlockIndented) => {
+                // 4칸 이상 들여쓰기 → 리스트 마커로 인식 안 됨
+                // 하지만 first_content_indent 이상이면 텍스트 전용 continuation
+                if indent >= first_content_indent {
+                    let strip_amount = indent.min(current_content_indent);
+                    let content = line[strip_amount..].to_string();
+                    // text_only: 재파싱 시 리스트로 인식 안 됨
+                    return Err(ListContinueReason::ContinuationLine(ItemLine::text_only(content)));
+                }
+            }
+            Err(ListItemNotStartReason::NotListMarker) => {
+                // 리스트 마커가 아니면 continuation으로 넘어감
+            }
         }
     }
 
-    // 다른 마커 또는 리스트가 아닌 내용 → 종료
+    // 2. Continuation line (Example 303 지원)
+    // first_content_indent 이상 들여쓰기는 현재 아이템의 내용
+    if indent >= first_content_indent {
+        // 내용 추출: min(indent, current_content_indent)만큼 제거
+        // 예: current_content_indent=5이고 indent=4이면 4칸 제거
+        // 예: current_content_indent=5이고 indent=6이면 5칸 제거
+        let strip_amount = indent.min(current_content_indent);
+        let content = line[strip_amount..].to_string();
+        // 일반 continuation (중첩 리스트 가능)
+        return Err(ListContinueReason::ContinuationLine(ItemLine::text(content)));
+    }
+
+    // 3. first_content_indent 미만 들여쓰기 + 새 아이템 아님 → 종료
     Ok(ListEndReason::Reprocess)
 }
 
@@ -107,16 +141,12 @@ fn try_ordered_marker(s: &str, indent: usize) -> Option<ListItemStart> {
     // 숫자 추출
     let num_str: String = s.chars().take_while(|c| c.is_ascii_digit()).collect();
 
-    // 숫자가 없거나 9자리 초과면 실패
+    // 숫자가 없거나 9자리 초과면 실패 (Example 265-266)
     if num_str.is_empty() || num_str.len() > 9 {
         return None;
     }
 
-    // 0으로 시작하면 실패 (CommonMark 명세)
-    if num_str.starts_with('0') {
-        return None;
-    }
-
+    // 선행 0 허용: "003"은 3으로 파싱 (Example 267-268)
     let start_num: usize = num_str.parse().ok()?;
 
     // 숫자 뒤 구분자 확인
@@ -283,11 +313,26 @@ mod tests {
         "1.   item",
         Ok(ListItemStartReason::Started(ListItemStart::ordered(1, '.', 0, 5, "item")))
     )]
-    // 9자리까지 허용
+    // =========================================================================
+    // Example 265-269: Ordered 마커 숫자 제약
+    // =========================================================================
+    // Example 265: 9자리까지 허용
     #[case(
-        "123456789. item",
-        Ok(ListItemStartReason::Started(ListItemStart::ordered(123456789, '.', 0, 11, "item")))
+        "123456789. ok",
+        Ok(ListItemStartReason::Started(ListItemStart::ordered(123456789, '.', 0, 11, "ok")))
     )]
+    // Example 266: 10자리 이상은 마커 아님 (테스트는 에러 케이스 섹션에)
+    // Example 267: 0으로 시작 가능
+    #[case(
+        "0. ok",
+        Ok(ListItemStartReason::Started(ListItemStart::ordered(0, '.', 0, 3, "ok")))
+    )]
+    // Example 268: 선행 0 허용 (값은 3)
+    #[case(
+        "003. ok",
+        Ok(ListItemStartReason::Started(ListItemStart::ordered(3, '.', 0, 5, "ok")))
+    )]
+    // Example 269: 음수는 마커 아님 (테스트는 에러 케이스 섹션에)
     // Ordered 빈 아이템
     #[case(
         "1.",
@@ -302,8 +347,10 @@ mod tests {
     #[case("    1. item", Err(ListItemNotStartReason::CodeBlockIndented))]
     #[case("text", Err(ListItemNotStartReason::NotListMarker))]
     #[case("", Err(ListItemNotStartReason::NotListMarker))]
-    #[case("1234567890. item", Err(ListItemNotStartReason::NotListMarker))]
-    #[case("0. item", Err(ListItemNotStartReason::NotListMarker))]
+    // Example 266: 10자리 이상은 마커 아님
+    #[case("1234567890. not ok", Err(ListItemNotStartReason::NotListMarker))]
+    // Example 269: 음수는 마커 아님 ('-'가 bullet 마커로 인식되지 않고 숫자도 아님)
+    #[case("-1. not ok", Err(ListItemNotStartReason::NotListMarker))]
     #[case("a. item", Err(ListItemNotStartReason::NotListMarker))]
     #[case("1: item", Err(ListItemNotStartReason::NotListMarker))]
     fn test_try_start(
@@ -314,60 +361,66 @@ mod tests {
     }
 
     // 5.2 List Items - 종료/계속 판별 (try_end)
+    // 인자: (line, marker, first_content_indent, current_content_indent, expected)
     #[rstest]
     // 빈 줄 → Blank
-    #[case("", ListMarker::Bullet('-'), 2, Err(ListContinueReason::Blank))]
-    #[case("  ", ListMarker::Bullet('-'), 2, Err(ListContinueReason::Blank))]
-    #[case("\t", ListMarker::Bullet('-'), 2, Err(ListContinueReason::Blank))]
+    #[case("", ListMarker::Bullet('-'), 2, 2, Err(ListContinueReason::Blank))]
+    #[case("  ", ListMarker::Bullet('-'), 2, 2, Err(ListContinueReason::Blank))]
+    #[case("\t", ListMarker::Bullet('-'), 2, 2, Err(ListContinueReason::Blank))]
     // 같은 마커 → 새 아이템
     #[case(
         "- b",
         ListMarker::Bullet('-'),
-        2,
+        2, 2,
         Err(ListContinueReason::NewItem(ListItemStart::bullet('-', 0, 2, "b")))
     )]
     #[case(
         "+ b",
         ListMarker::Bullet('+'),
-        2,
+        2, 2,
         Err(ListContinueReason::NewItem(ListItemStart::bullet('+', 0, 2, "b")))
     )]
     #[case(
         "* b",
         ListMarker::Bullet('*'),
-        2,
+        2, 2,
         Err(ListContinueReason::NewItem(ListItemStart::bullet('*', 0, 2, "b")))
     )]
-    #[case("2. b", ListMarker::Ordered { start: 1, delimiter: '.' }, 2, Err(ListContinueReason::NewItem(ListItemStart::ordered(2, '.', 0, 3, "b"))))]
-    #[case("2) b", ListMarker::Ordered { start: 1, delimiter: ')' }, 2, Err(ListContinueReason::NewItem(ListItemStart::ordered(2, ')', 0, 3, "b"))))]
-    // Continuation line
-    #[case("  continued", ListMarker::Bullet('-'), 2, Err(ListContinueReason::ContinuationLine("continued".to_string())))]
-    #[case("   continued", ListMarker::Bullet('-'), 2, Err(ListContinueReason::ContinuationLine(" continued".to_string())))]
-    #[case("    continued", ListMarker::Bullet('-'), 2, Err(ListContinueReason::ContinuationLine("  continued".to_string())))]
+    #[case("2. b", ListMarker::Ordered { start: 1, delimiter: '.' }, 3, 3, Err(ListContinueReason::NewItem(ListItemStart::ordered(2, '.', 0, 3, "b"))))]
+    #[case("2) b", ListMarker::Ordered { start: 1, delimiter: ')' }, 3, 3, Err(ListContinueReason::NewItem(ListItemStart::ordered(2, ')', 0, 3, "b"))))]
+    // Continuation line (text_only=false: 일반 continuation)
+    #[case("  continued", ListMarker::Bullet('-'), 2, 2, Err(ListContinueReason::ContinuationLine(ItemLine::text("continued".to_string()))))]
+    #[case("   continued", ListMarker::Bullet('-'), 2, 2, Err(ListContinueReason::ContinuationLine(ItemLine::text(" continued".to_string()))))]
+    #[case("    continued", ListMarker::Bullet('-'), 2, 2, Err(ListContinueReason::ContinuationLine(ItemLine::text("  continued".to_string()))))]
     // 리스트 종료 (다른 마커)
-    #[case("+ b", ListMarker::Bullet('-'), 2, Ok(ListEndReason::Reprocess))]
-    #[case("* b", ListMarker::Bullet('-'), 2, Ok(ListEndReason::Reprocess))]
-    #[case("- b", ListMarker::Bullet('+'), 2, Ok(ListEndReason::Reprocess))]
-    #[case("1) b", ListMarker::Ordered { start: 1, delimiter: '.' }, 2, Ok(ListEndReason::Reprocess))]
-    #[case("1. b", ListMarker::Ordered { start: 1, delimiter: ')' }, 2, Ok(ListEndReason::Reprocess))]
-    #[case("1. b", ListMarker::Bullet('-'), 2, Ok(ListEndReason::Reprocess))]
-    #[case("- b", ListMarker::Ordered { start: 1, delimiter: '.' }, 2, Ok(ListEndReason::Reprocess))]
+    #[case("+ b", ListMarker::Bullet('-'), 2, 2, Ok(ListEndReason::Reprocess))]
+    #[case("* b", ListMarker::Bullet('-'), 2, 2, Ok(ListEndReason::Reprocess))]
+    #[case("- b", ListMarker::Bullet('+'), 2, 2, Ok(ListEndReason::Reprocess))]
+    #[case("1) b", ListMarker::Ordered { start: 1, delimiter: '.' }, 3, 3, Ok(ListEndReason::Reprocess))]
+    #[case("1. b", ListMarker::Ordered { start: 1, delimiter: ')' }, 3, 3, Ok(ListEndReason::Reprocess))]
+    #[case("1. b", ListMarker::Bullet('-'), 2, 2, Ok(ListEndReason::Reprocess))]
+    #[case("- b", ListMarker::Ordered { start: 1, delimiter: '.' }, 3, 3, Ok(ListEndReason::Reprocess))]
     // 리스트 종료 (비리스트 내용)
-    #[case("some text", ListMarker::Bullet('-'), 2, Ok(ListEndReason::Reprocess))]
-    #[case("# heading", ListMarker::Bullet('-'), 2, Ok(ListEndReason::Reprocess))]
+    #[case("some text", ListMarker::Bullet('-'), 2, 2, Ok(ListEndReason::Reprocess))]
+    #[case("# heading", ListMarker::Bullet('-'), 2, 2, Ok(ListEndReason::Reprocess))]
     #[case(
         "> blockquote",
         ListMarker::Bullet('-'),
-        2,
+        2, 2,
         Ok(ListEndReason::Reprocess)
     )]
-    #[case("```code", ListMarker::Bullet('-'), 2, Ok(ListEndReason::Reprocess))]
+    #[case("```code", ListMarker::Bullet('-'), 2, 2, Ok(ListEndReason::Reprocess))]
+    // Example 303: 4칸 들여쓰기된 마커는 continuation (first=2, current=5)
+    // "   - d"의 content_indent=5, "    - e"(4칸)는 continuation이어야 함
+    // 내용: min(4, 5)=4칸 제거 → "- e", text_only=true (리스트 마커 아님)
+    #[case("    - e", ListMarker::Bullet('-'), 2, 5, Err(ListContinueReason::ContinuationLine(ItemLine::text_only("- e".to_string()))))]
     fn test_try_end(
         #[case] line: &str,
         #[case] marker: ListMarker,
-        #[case] content_indent: usize,
+        #[case] first_content_indent: usize,
+        #[case] current_content_indent: usize,
         #[case] expected: Result<ListEndReason, ListContinueReason>,
     ) {
-        assert_eq!(try_end(line, &marker, content_indent), expected);
+        assert_eq!(try_end(line, &marker, first_content_indent, current_content_indent), expected);
     }
 }
