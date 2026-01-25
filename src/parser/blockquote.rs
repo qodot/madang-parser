@@ -13,13 +13,9 @@ pub enum BlockquoteErr {
     NotBlockquoteMarker,
 }
 
-/// Blockquote 파싱 시도
-/// 성공하면 Ok(BlockNode::Blockquote), 실패하면 Err(사유)
-/// 중첩 blockquote를 위해 parse_block 함수를 받음
-pub fn parse<F>(line: &str, parse_block: F) -> Result<BlockNode, BlockquoteErr>
-where
-    F: Fn(&str) -> BlockNode,
-{
+/// Blockquote 라인 파싱 - 마커 검증 및 내용 추출
+/// 성공하면 Ok(마커 제거된 내용), 실패하면 Err(사유)
+pub fn parse(line: &str) -> Result<String, BlockquoteErr> {
     let indent = calculate_indent(line);
     let trimmed = line.trim();
 
@@ -33,38 +29,70 @@ where
         return Err(BlockquoteErr::NotBlockquoteMarker);
     }
 
-    // 각 줄에서 > 마커 제거
-    let content = strip_blockquote_markers(trimmed);
+    // > 마커 제거 후 내용 반환
+    let rest = &trimmed[1..];
+    let content = if rest.starts_with(' ') || rest.starts_with('\t') {
+        &rest[1..]
+    } else {
+        rest
+    };
 
-    // \n\n으로 분리하여 각 블록 파싱
-    let children: Vec<BlockNode> = content
-        .split("\n\n")
-        .filter(|s| !s.is_empty())
-        .map(|block| parse_block(block))
-        .collect();
-
-    Ok(BlockNode::Blockquote(BlockquoteNode::new(children)))
+    Ok(content.to_string())
 }
 
-/// 각 줄에서 blockquote 마커(>) 제거
-fn strip_blockquote_markers(text: &str) -> String {
-    text.lines()
-        .map(|line| {
-            let trimmed = line.trim_start();
-            if trimmed.starts_with('>') {
-                let rest = &trimmed[1..];
-                // > 뒤 공백 하나 제거
-                if rest.starts_with(' ') || rest.starts_with('\t') {
-                    &rest[1..]
-                } else {
-                    rest
+/// 축적된 내용으로 Blockquote 노드 생성
+/// contents: 각 라인에서 > 마커 제거된 내용들
+pub fn finalize<F>(contents: Vec<String>, parse_block: F) -> BlockNode
+where
+    F: Fn(&str) -> BlockNode,
+{
+    let text = contents.join("\n");
+
+    // \n\n으로 분리하여 각 블록 파싱
+    let children: Vec<BlockNode> = text
+        .split("\n\n")
+        .filter(|s| !s.is_empty())
+        .map(parse_block)
+        .collect();
+
+    BlockNode::Blockquote(BlockquoteNode::new(children))
+}
+
+/// 여러 줄 텍스트를 Blockquote로 파싱 (중첩 blockquote용)
+/// 첫 줄이 blockquote가 아니면 None 반환
+pub fn parse_text<F>(text: &str, parse_block: F) -> Option<BlockNode>
+where
+    F: Fn(&str) -> BlockNode,
+{
+    let mut contents: Vec<String> = Vec::new();
+
+    for line in text.lines() {
+        match parse(line) {
+            Ok(content) => contents.push(content),
+            Err(BlockquoteErr::NotBlockquoteMarker) => {
+                // Lazy continuation: > 없는 줄은 그대로 유지
+                if contents.is_empty() {
+                    // 첫 줄이 blockquote가 아니면 None
+                    return None;
                 }
-            } else {
-                line
+                contents.push(line.trim().to_string());
             }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+            Err(BlockquoteErr::CodeBlockIndented) => {
+                // 4칸 이상 들여쓰기면 blockquote 아님
+                if contents.is_empty() {
+                    return None;
+                }
+                // 이미 시작된 blockquote 안에서는 lazy continuation으로 처리
+                contents.push(line.trim().to_string());
+            }
+        }
+    }
+
+    if contents.is_empty() {
+        return None;
+    }
+
+    Some(finalize(contents, parse_block))
 }
 
 #[cfg(test)]
