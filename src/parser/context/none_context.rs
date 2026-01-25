@@ -4,6 +4,7 @@ use super::{
     CodeBlockFencedStartReason, CodeBlockIndentedStartReason, ItemLine, LineResult,
     ListItemStartReason, ParsingContext,
 };
+use crate::parser::heading::HeadingOkReason;
 use crate::parser::thematic_break::ThematicBreakOkReason;
 use crate::node::Node;
 use crate::parser::code_block_fenced::try_start as try_start_code_block_fenced;
@@ -25,11 +26,15 @@ impl NoneContext {
         }
 
         // 한 줄 블록들 (Thematic Break, ATX Heading)
-        if let Ok(ThematicBreakOkReason::Started) = thematic_break::parse(trimmed, indent) {
+        if let Ok(ThematicBreakOkReason::Started) = thematic_break::parse(current_line) {
             return (vec![Node::ThematicBreak], ParsingContext::None(NoneContext));
         }
 
-        if let Some(node) = heading::parse(trimmed, indent) {
+        if let Ok(HeadingOkReason { level, content }) = heading::parse(current_line) {
+            let node = Node::Heading {
+                level,
+                children: vec![Node::Text(content)],
+            };
             return (vec![node], ParsingContext::None(NoneContext));
         }
 

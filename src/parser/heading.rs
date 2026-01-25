@@ -1,29 +1,45 @@
-//! ATX Heading 파싱
-//!
-//! CommonMark 명세: https://spec.commonmark.org/0.31.2/#atx-headings
+//! https://spec.commonmark.org/0.31.2/#atx-headings
 
-use crate::node::Node;
-use super::helpers::count_leading_char;
+use super::helpers::{calculate_indent, count_leading_char};
 
-/// ATX Heading 파싱 시도
-/// 성공하면 Some(Node::Heading), 실패하면 None
-pub fn parse(trimmed: &str, indent: usize) -> Option<Node> {
-    // 들여쓰기 3칸 초과면 Heading 아님
+#[derive(Debug, Clone, PartialEq)]
+pub struct HeadingOkReason {
+    pub level: u8,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum HeadingErrReason {
+    /// 4칸 이상 들여쓰기 (코드 블록으로 해석됨)
+    CodeBlockIndented,
+    /// #로 시작하지 않음
+    NotHashStart,
+    /// # 개수 초과 (7개 이상)
+    TooManyHashes,
+    /// # 뒤에 공백 없음
+    NoSpaceAfterHashes,
+}
+
+pub fn parse(line: &str) -> Result<HeadingOkReason, HeadingErrReason> {
+    let indent = calculate_indent(line);
+    let trimmed = line.trim();
+
+    // 들여쓰기 3칸 초과면 코드 블록
     if indent > 3 {
-        return None;
+        return Err(HeadingErrReason::CodeBlockIndented);
     }
 
     // #로 시작하지 않으면 Heading 아님
     if !trimmed.starts_with('#') {
-        return None;
+        return Err(HeadingErrReason::NotHashStart);
     }
 
     // # 개수 세기
     let level = count_leading_char(trimmed, '#');
 
     // 레벨 1~6만 유효
-    if level < 1 || level > 6 {
-        return None;
+    if level > 6 {
+        return Err(HeadingErrReason::TooManyHashes);
     }
 
     let rest = &trimmed[level..];
@@ -32,12 +48,12 @@ pub fn parse(trimmed: &str, indent: usize) -> Option<Node> {
     if rest.is_empty() || rest.starts_with(' ') || rest.starts_with('\t') {
         let content = rest.trim();
         let content = strip_closing_hashes(content);
-        Some(Node::Heading {
+        Ok(HeadingOkReason {
             level: level as u8,
-            children: vec![Node::Text(content.to_string())],
+            content: content.to_string(),
         })
     } else {
-        None
+        Err(HeadingErrReason::NoSpaceAfterHashes)
     }
 }
 
@@ -93,6 +109,10 @@ mod tests {
     #[case(" ### foo", vec![Node::heading(3, vec![Node::text("foo")])])]
     #[case("  ## foo", vec![Node::heading(2, vec![Node::text("foo")])])]
     #[case("   # foo", vec![Node::heading(1, vec![Node::text("foo")])])]
+    // Example 69: 4칸 들여쓰기는 코드 블록
+    #[case("    # foo", vec![Node::code_block(None, "# foo")])]
+    // Example 70: Paragraph 내 4칸 들여쓰기는 continuation
+    #[case("foo\n    # bar", vec![Node::para(vec![Node::text("foo\n# bar")])])]
     // Example 71: 닫는 # 시퀀스
     #[case("## foo ##", vec![Node::heading(2, vec![Node::text("foo")])])]
     #[case("  ###   bar    ###", vec![Node::heading(3, vec![Node::text("bar")])])]
@@ -105,6 +125,10 @@ mod tests {
     #[case("### foo ### b", vec![Node::heading(3, vec![Node::text("foo ### b")])])]
     // Example 75: # 앞 공백 없음
     #[case("# foo#", vec![Node::heading(1, vec![Node::text("foo#")])])]
+    // Example 77: Heading이 thematic break 인터럽트
+    #[case("****\n## foo\n****", vec![Node::ThematicBreak, Node::heading(2, vec![Node::text("foo")]), Node::ThematicBreak])]
+    // Example 78: Heading이 paragraph 인터럽트
+    #[case("Foo bar\n# baz\nBar foo", vec![Node::para(vec![Node::text("Foo bar")]), Node::heading(1, vec![Node::text("baz")]), Node::para(vec![Node::text("Bar foo")])])]
     // Example 79: 빈 heading
     #[case("##", vec![Node::heading(2, vec![Node::text("")])])]
     #[case("#", vec![Node::heading(1, vec![Node::text("")])])]

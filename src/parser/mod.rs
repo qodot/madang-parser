@@ -145,14 +145,18 @@ fn process_line_in_paragraph(current_line: &str, pending_lines: Vec<String>) -> 
     }
 
     // Thematic Break이면 Paragraph 종료
-    if thematic_break::parse(trimmed, indent).is_ok() {
+    if thematic_break::parse(current_line).is_ok() {
         let text = pending_lines.join("\n");
         return (vec![paragraph::parse(&text), Node::ThematicBreak], ParsingContext::None(NoneContext));
     }
 
     // ATX Heading이면 Paragraph 종료
-    if let Some(heading_node) = heading::parse(trimmed, indent) {
+    if let Ok(heading::HeadingOkReason { level, content }) = heading::parse(current_line) {
         let text = pending_lines.join("\n");
+        let heading_node = Node::Heading {
+            level,
+            children: vec![Node::Text(content)],
+        };
         return (vec![paragraph::parse(&text), heading_node], ParsingContext::None(NoneContext));
     }
 
@@ -447,7 +451,7 @@ fn process_line_in_blockquote(current_line: &str, pending_lines: Vec<String>) ->
     }
 
     // Thematic Break이면 Blockquote 종료
-    if thematic_break::parse(trimmed, indent).is_ok() {
+    if thematic_break::parse(current_line).is_ok() {
         let text = pending_lines.join("\n");
         let mut nodes = blockquote::parse(&text, 0, parse_block_simple)
             .map(|node| vec![node])
@@ -457,11 +461,15 @@ fn process_line_in_blockquote(current_line: &str, pending_lines: Vec<String>) ->
     }
 
     // ATX Heading이면 Blockquote 종료
-    if let Some(heading_node) = heading::parse(trimmed, indent) {
+    if let Ok(heading::HeadingOkReason { level, content }) = heading::parse(current_line) {
         let text = pending_lines.join("\n");
         let mut nodes = blockquote::parse(&text, 0, parse_block_simple)
             .map(|node| vec![node])
             .unwrap_or_default();
+        let heading_node = Node::Heading {
+            level,
+            children: vec![Node::Text(content)],
+        };
         nodes.push(heading_node);
         return (nodes, ParsingContext::None(NoneContext));
     }
@@ -541,11 +549,18 @@ fn parse_block_simple(block: &str) -> Node {
         return node;
     }
 
-    if thematic_break::parse(trimmed, indent).is_ok() {
+    if thematic_break::parse(block).is_ok() {
         return Node::ThematicBreak;
     }
 
-    heading::parse(trimmed, indent).unwrap_or_else(|| paragraph::parse(trimmed))
+    if let Ok(heading::HeadingOkReason { level, content }) = heading::parse(block) {
+        return Node::Heading {
+            level,
+            children: vec![Node::Text(content)],
+        };
+    }
+
+    paragraph::parse(trimmed)
 }
 
 #[cfg(test)]

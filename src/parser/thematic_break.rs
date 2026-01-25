@@ -1,13 +1,12 @@
 //! https://spec.commonmark.org/0.31.2/#thematic-breaks
 
-/// Thematic Break 감지 성공 사유
+use super::helpers::calculate_indent;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ThematicBreakOkReason {
-    /// 유효한 Thematic Break 발견
     Started,
 }
 
-/// Thematic Break 감지 아님 사유
 #[derive(Debug, Clone, PartialEq)]
 pub enum ThematicBreakErrReason {
     /// 4칸 이상 들여쓰기 (코드 블록으로 해석됨)
@@ -22,19 +21,16 @@ pub enum ThematicBreakErrReason {
     MixedCharacters,
 }
 
-/// Thematic Break 파싱 시도
-/// 성공 시 Ok(Started), 실패 시 Err(사유) 반환
-pub fn parse(
-    trimmed: &str,
-    indent: usize,
-) -> Result<ThematicBreakOkReason, ThematicBreakErrReason> {
+pub fn parse(line: &str) -> Result<ThematicBreakOkReason, ThematicBreakErrReason> {
+    let indent = calculate_indent(line);
+    let trimmed = line.trim();
+
     // 들여쓰기 3칸 초과면 코드 블록
     if indent > 3 {
         return Err(ThematicBreakErrReason::CodeBlockIndented);
     }
 
     // 빈 줄
-    let trimmed = trimmed.trim();
     if trimmed.is_empty() {
         return Err(ThematicBreakErrReason::Empty);
     }
