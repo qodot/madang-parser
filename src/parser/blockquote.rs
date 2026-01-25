@@ -2,23 +2,35 @@
 //!
 //! CommonMark 명세: https://spec.commonmark.org/0.31.2/#block-quotes
 
+use super::helpers::calculate_indent;
 use crate::node::{BlockNode, BlockquoteNode};
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum BlockquoteErr {
+    /// 4칸 이상 들여쓰기 (코드 블록으로 해석됨)
+    CodeBlockIndented,
+    /// >로 시작하지 않음
+    NotBlockquoteMarker,
+}
+
 /// Blockquote 파싱 시도
-/// 성공하면 Some(BlockNode::Blockquote), 실패하면 None
+/// 성공하면 Ok(BlockNode::Blockquote), 실패하면 Err(사유)
 /// 중첩 blockquote를 위해 parse_block 함수를 받음
-pub fn parse<F>(trimmed: &str, indent: usize, parse_block: F) -> Option<BlockNode>
+pub fn parse<F>(line: &str, parse_block: F) -> Result<BlockNode, BlockquoteErr>
 where
     F: Fn(&str) -> BlockNode,
 {
+    let indent = calculate_indent(line);
+    let trimmed = line.trim();
+
     // 들여쓰기 3칸 초과면 Blockquote 아님
     if indent > 3 {
-        return None;
+        return Err(BlockquoteErr::CodeBlockIndented);
     }
 
     // >로 시작하지 않으면 Blockquote 아님
     if !trimmed.starts_with('>') {
-        return None;
+        return Err(BlockquoteErr::NotBlockquoteMarker);
     }
 
     // 각 줄에서 > 마커 제거
@@ -31,7 +43,7 @@ where
         .map(|block| parse_block(block))
         .collect();
 
-    Some(BlockNode::Blockquote(BlockquoteNode::new(children)))
+    Ok(BlockNode::Blockquote(BlockquoteNode::new(children)))
 }
 
 /// 각 줄에서 blockquote 마커(>) 제거

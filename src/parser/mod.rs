@@ -55,7 +55,7 @@ pub fn parse(input: &str) -> DocumentNode {
 /// 한 줄 처리 후 새 상태 반환
 fn process_line(line: &str, context: ParsingContext, nodes: Vec<BlockNode>) -> ParserState {
     let (new_nodes, new_context) = match context {
-        ParsingContext::None(ctx) => ctx.parse(line),
+        ParsingContext::None(ctx) => ctx.parse(line, parse_block_simple),
         ParsingContext::CodeBlockFenced { start, content } => {
             process_line_in_code_block(line, start, content)
         }
@@ -157,7 +157,7 @@ fn process_line_in_paragraph(current_line: &str, pending_lines: Vec<String>) -> 
     }
 
     // Blockquote 시작이면 Paragraph 종료 후 Blockquote 시작
-    if trimmed.starts_with('>') && indent <= 3 {
+    if blockquote::parse(current_line, parse_block_simple).is_ok() {
         let text = pending_lines.join("\n");
         let context = ParsingContext::Blockquote {
             pending_lines: vec![trimmed.to_string()],
@@ -211,7 +211,7 @@ fn process_line_in_list(
         // 종료: List 노드 생성 + 현재 줄 재처리
         Ok(ListEndReason::Reprocess) => {
             let list_node = build_list_node(&first_item_start, items, current_item_lines, tight);
-            let (more_nodes, new_context) = NoneContext.parse(current_line);
+            let (more_nodes, new_context) = NoneContext.parse(current_line, parse_block_simple);
             let mut nodes = vec![list_node];
             nodes.extend(more_nodes);
             (nodes, new_context)
@@ -390,7 +390,7 @@ fn process_line_in_code_block_indented(
             let content = trim_blank_lines(pending_lines);
             let code_node = BlockNode::CodeBlock(CodeBlockNode::new(None, content));
             // 현재 줄을 다시 처리
-            let (more_nodes, new_context) = NoneContext.parse(current_line);
+            let (more_nodes, new_context) = NoneContext.parse(current_line, parse_block_simple);
             let mut nodes = vec![code_node];
             nodes.extend(more_nodes);
             (nodes, new_context)
@@ -408,12 +408,11 @@ fn push_item(mut items: Vec<Vec<ItemLine>>, item: Vec<ItemLine>) -> Vec<Vec<Item
 /// 반환: (새로 완성된 노드들, 새 컨텍스트)
 fn process_line_in_blockquote(current_line: &str, pending_lines: Vec<String>) -> LineResult {
     let trimmed = current_line.trim();
-    let _indent = calculate_indent(current_line);
 
     // 빈 줄이면 Blockquote 종료
     if trimmed.is_empty() {
         let text = pending_lines.join("\n");
-        if let Some(node) = blockquote::parse(&text, 0, parse_block_simple) {
+        if let Ok(node) = blockquote::parse(&text, parse_block_simple) {
             return (vec![node], ParsingContext::None(NoneContext));
         }
         // blockquote 파싱 실패시 (이론상 발생 안함)
@@ -423,7 +422,8 @@ fn process_line_in_blockquote(current_line: &str, pending_lines: Vec<String>) ->
     // Fenced Code Block 시작이면 Blockquote 종료
     if let Ok(CodeBlockFencedStartReason::Started(start)) = try_start_code_block_fenced(current_line) {
         let text = pending_lines.join("\n");
-        let nodes = blockquote::parse(&text, 0, parse_block_simple)
+        let nodes = blockquote::parse(&text, parse_block_simple)
+            .ok()
             .map(|node| vec![node])
             .unwrap_or_default();
         let context = ParsingContext::CodeBlockFenced {
@@ -436,7 +436,8 @@ fn process_line_in_blockquote(current_line: &str, pending_lines: Vec<String>) ->
     // Thematic Break이면 Blockquote 종료
     if let Ok(node) = thematic_break::parse(current_line) {
         let text = pending_lines.join("\n");
-        let mut nodes = blockquote::parse(&text, 0, parse_block_simple)
+        let mut nodes = blockquote::parse(&text, parse_block_simple)
+            .ok()
             .map(|n| vec![n])
             .unwrap_or_default();
         nodes.push(node);
@@ -446,7 +447,8 @@ fn process_line_in_blockquote(current_line: &str, pending_lines: Vec<String>) ->
     // ATX Heading이면 Blockquote 종료
     if let Ok(node) = heading::parse(current_line) {
         let text = pending_lines.join("\n");
-        let mut nodes = blockquote::parse(&text, 0, parse_block_simple)
+        let mut nodes = blockquote::parse(&text, parse_block_simple)
+            .ok()
             .map(|n| vec![n])
             .unwrap_or_default();
         nodes.push(node);
@@ -474,7 +476,7 @@ fn finalize_context(context: ParsingContext, nodes: Vec<BlockNode>) -> Vec<Block
         }
         ParsingContext::Blockquote { pending_lines } => {
             let text = pending_lines.join("\n");
-            if let Some(node) = blockquote::parse(&text, 0, parse_block_simple) {
+            if let Ok(node) = blockquote::parse(&text, parse_block_simple) {
                 push_node(nodes, node)
             } else {
                 nodes
@@ -521,7 +523,7 @@ fn parse_block_simple(block: &str) -> BlockNode {
     }
 
     // 중첩 blockquote 처리를 위해 blockquote 파싱 시도
-    if let Some(node) = blockquote::parse(trimmed, indent, parse_block_simple) {
+    if let Ok(node) = blockquote::parse(block, parse_block_simple) {
         return node;
     }
 

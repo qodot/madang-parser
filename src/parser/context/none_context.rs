@@ -4,17 +4,19 @@ use super::{
     CodeBlockFencedStartReason, CodeBlockIndentedStartReason, ItemLine, LineResult,
     ListItemStartReason, ParsingContext,
 };
+use crate::node::BlockNode;
 use crate::parser::code_block_fenced::try_start as try_start_code_block_fenced;
 use crate::parser::code_block_indented::try_start as try_start_code_block_indented;
-use crate::parser::helpers::calculate_indent;
-use crate::parser::{heading, list_item, thematic_break};
+use crate::parser::{blockquote, heading, list_item, thematic_break};
 
 #[derive(Debug, Clone, Default)]
 pub struct NoneContext;
 
 impl NoneContext {
-    pub fn parse(self, line: &str) -> LineResult {
-        let indent = calculate_indent(line);
+    pub fn parse<F>(self, line: &str, parse_block: F) -> LineResult
+    where
+        F: Fn(&str) -> BlockNode,
+    {
         let trimmed = line.trim();
 
         // 빈 줄은 무시
@@ -42,8 +44,8 @@ impl NoneContext {
             return (vec![], context);
         }
 
-        // Blockquote 시작 감지 (> 로 시작하고 들여쓰기 3칸 이하)
-        if trimmed.starts_with('>') && indent <= 3 {
+        // Blockquote 시작 감지
+        if blockquote::parse(line, &parse_block).is_ok() {
             let context = ParsingContext::Blockquote {
                 pending_lines: vec![trimmed.to_string()],
             };
