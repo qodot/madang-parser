@@ -1,36 +1,48 @@
-//! Thematic Break 파싱
-//!
-//! CommonMark 명세: https://spec.commonmark.org/0.31.2/#thematic-breaks
+//! https://spec.commonmark.org/0.31.2/#thematic-breaks
 
-use crate::node::Node;
-
-/// Thematic Break 파싱 시도
-/// 성공하면 Some(Node::ThematicBreak), 실패하면 None
-pub fn parse(trimmed: &str, indent: usize) -> Option<Node> {
-    // 들여쓰기 3칸 초과면 Thematic Break 아님
-    if indent > 3 {
-        return None;
-    }
-
-    if is_thematic_break(trimmed) {
-        Some(Node::ThematicBreak)
-    } else {
-        None
-    }
+/// Thematic Break 감지 성공 사유
+#[derive(Debug, Clone, PartialEq)]
+pub enum ThematicBreakOkReason {
+    /// 유효한 Thematic Break 발견
+    Started,
 }
 
-/// Thematic Break 검사
-/// 규칙: *, -, _ 중 하나가 3개 이상, 공백/탭만 사이에 허용
-fn is_thematic_break(s: &str) -> bool {
-    let trimmed = s.trim();
+/// Thematic Break 감지 아님 사유
+#[derive(Debug, Clone, PartialEq)]
+pub enum ThematicBreakErrReason {
+    /// 4칸 이상 들여쓰기 (코드 블록으로 해석됨)
+    CodeBlockIndented,
+    /// 빈 줄
+    Empty,
+    /// 유효하지 않은 마커 문자 (*, -, _ 아님)
+    InvalidMarker,
+    /// 마커 개수 부족 (3개 미만)
+    InsufficientMarkers,
+    /// 다른 문자 섞임 (공백/탭 외)
+    MixedCharacters,
+}
+
+/// Thematic Break 파싱 시도
+/// 성공 시 Ok(Started), 실패 시 Err(사유) 반환
+pub fn parse(
+    trimmed: &str,
+    indent: usize,
+) -> Result<ThematicBreakOkReason, ThematicBreakErrReason> {
+    // 들여쓰기 3칸 초과면 코드 블록
+    if indent > 3 {
+        return Err(ThematicBreakErrReason::CodeBlockIndented);
+    }
+
+    // 빈 줄
+    let trimmed = trimmed.trim();
     if trimmed.is_empty() {
-        return false;
+        return Err(ThematicBreakErrReason::Empty);
     }
 
     // 첫 문자가 마커 문자인지 확인
     let first = trimmed.chars().next().unwrap();
     if first != '*' && first != '-' && first != '_' {
-        return false;
+        return Err(ThematicBreakErrReason::InvalidMarker);
     }
 
     // 모든 문자가 같은 마커이거나 공백/탭인지 확인
@@ -39,12 +51,16 @@ fn is_thematic_break(s: &str) -> bool {
         if c == first {
             marker_count += 1;
         } else if c != ' ' && c != '\t' {
-            return false;
+            return Err(ThematicBreakErrReason::MixedCharacters);
         }
     }
 
     // 마커가 3개 이상이어야 함
-    marker_count >= 3
+    if marker_count < 3 {
+        return Err(ThematicBreakErrReason::InsufficientMarkers);
+    }
+
+    Ok(ThematicBreakOkReason::Started)
 }
 
 #[cfg(test)]
@@ -71,6 +87,8 @@ mod tests {
     #[case("   ***", vec![Node::ThematicBreak])]
     // Example 48: 4칸 들여쓰기는 코드 블록
     #[case("    ***", vec![Node::code_block(None, "***")])]
+    // Example 49: Paragraph 내 4칸 들여쓰기는 continuation
+    #[case("Foo\n    ***", vec![Node::para(vec![Node::text("Foo\n***")])])]
     // Example 50: 많은 문자
     #[case("_____________________________________", vec![Node::ThematicBreak])]
     // Example 51: 공백 사이

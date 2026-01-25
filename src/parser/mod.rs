@@ -145,9 +145,9 @@ fn process_line_in_paragraph(current_line: &str, pending_lines: Vec<String>) -> 
     }
 
     // Thematic Break이면 Paragraph 종료
-    if let Some(thematic_node) = thematic_break::parse(trimmed, indent) {
+    if thematic_break::parse(trimmed, indent).is_ok() {
         let text = pending_lines.join("\n");
-        return (vec![paragraph::parse(&text), thematic_node], ParsingContext::None(NoneContext));
+        return (vec![paragraph::parse(&text), Node::ThematicBreak], ParsingContext::None(NoneContext));
     }
 
     // ATX Heading이면 Paragraph 종료
@@ -447,12 +447,12 @@ fn process_line_in_blockquote(current_line: &str, pending_lines: Vec<String>) ->
     }
 
     // Thematic Break이면 Blockquote 종료
-    if let Some(thematic_node) = thematic_break::parse(trimmed, indent) {
+    if thematic_break::parse(trimmed, indent).is_ok() {
         let text = pending_lines.join("\n");
         let mut nodes = blockquote::parse(&text, 0, parse_block_simple)
             .map(|node| vec![node])
             .unwrap_or_default();
-        nodes.push(thematic_node);
+        nodes.push(Node::ThematicBreak);
         return (nodes, ParsingContext::None(NoneContext));
     }
 
@@ -541,9 +541,11 @@ fn parse_block_simple(block: &str) -> Node {
         return node;
     }
 
-    thematic_break::parse(trimmed, indent)
-        .or_else(|| heading::parse(trimmed, indent))
-        .unwrap_or_else(|| paragraph::parse(trimmed))
+    if thematic_break::parse(trimmed, indent).is_ok() {
+        return Node::ThematicBreak;
+    }
+
+    heading::parse(trimmed, indent).unwrap_or_else(|| paragraph::parse(trimmed))
 }
 
 #[cfg(test)]
