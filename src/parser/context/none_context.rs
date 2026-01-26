@@ -2,7 +2,7 @@
 
 use super::{
     CodeBlockIndentedStartReason, ItemLine, LineResult,
-    ListItemStartReason, ParsingContext,
+    ListItemStartReason, ParagraphContext, ParsingContext,
 };
 use crate::parser::code_block_fenced::{parse as parse_code_block_fenced, CodeBlockFencedOk};
 use crate::parser::code_block_indented::try_start as try_start_code_block_indented;
@@ -73,9 +73,9 @@ impl NoneContext {
         }
 
         // 나머지는 Paragraph 시작
-        let context = ParsingContext::Paragraph {
-            pending_lines: vec![line.trim().to_string()],
-        };
+        let context = ParsingContext::Paragraph(ParagraphContext::new(
+            vec![line.trim().to_string()],
+        ));
         (vec![], context)
     }
 }

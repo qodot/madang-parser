@@ -1,0 +1,101 @@
+//! ParagraphContext: Paragraph 파싱 중 상태
+
+use super::{
+    HeadingSetextStartReason, ItemLine,
+    LineResult, ListItemStartReason, ParsingContext,
+};
+use crate::node::{HeadingNode, InlineNode, TextNode};
+use crate::parser::code_block_fenced::{parse as parse_code_block_fenced, CodeBlockFencedOk};
+use crate::parser::{blockquote, heading, list_item, paragraph, thematic_break};
+use crate::parser::heading_setext::try_start as try_start_heading_setext;
+use crate::parser::helpers::calculate_indent;
+use super::NoneContext;
+
+#[derive(Debug, Clone)]
+pub struct ParagraphContext {
+    pub pending_lines: Vec<String>,
+}
+
+impl ParagraphContext {
+    pub fn new(pending_lines: Vec<String>) -> Self {
+        Self { pending_lines }
+    }
+
+    pub fn parse(self, line: &str) -> LineResult {
+        let trimmed = line.trim();
+
+        // 빈 줄이면 Paragraph 종료
+        if trimmed.is_empty() {
+            let text = self.pending_lines.join("\n");
+            return (vec![paragraph::parse(&text)], ParsingContext::None(NoneContext));
+        }
+
+        // Fenced Code Block 시작이면 Paragraph 종료 후 Code Block 시작
+        if let Ok(CodeBlockFencedOk::Start(start)) = parse_code_block_fenced(line, None) {
+            let text = self.pending_lines.join("\n");
+            let context = ParsingContext::CodeBlockFenced {
+                start,
+                content: Vec::new(),
+            };
+            return (vec![paragraph::parse(&text)], context);
+        }
+
+        let indent = calculate_indent(line);
+
+        // Setext Heading 밑줄이면 Paragraph를 Heading으로 변환
+        // 중요: Thematic Break보다 먼저 확인해야 함 (---가 Setext 밑줄로 해석됨)
+        if let Ok(HeadingSetextStartReason::Started(start)) = try_start_heading_setext(trimmed, indent) {
+            let text = self.pending_lines.join("\n");
+            let node = crate::node::BlockNode::Heading(HeadingNode::new(
+                start.level.to_level(),
+                vec![InlineNode::Text(TextNode::new(&text))],
+            ));
+            return (vec![node], ParsingContext::None(NoneContext));
+        }
+
+        // Thematic Break이면 Paragraph 종료
+        if let Ok(node) = thematic_break::parse(line) {
+            let text = self.pending_lines.join("\n");
+            return (vec![paragraph::parse(&text), node], ParsingContext::None(NoneContext));
+        }
+
+        // ATX Heading이면 Paragraph 종료
+        if let Ok(node) = heading::parse(line) {
+            let text = self.pending_lines.join("\n");
+            return (vec![paragraph::parse(&text), node], ParsingContext::None(NoneContext));
+        }
+
+        // Blockquote 시작이면 Paragraph 종료 후 Blockquote 시작
+        if let Ok(content) = blockquote::parse(line) {
+            let text = self.pending_lines.join("\n");
+            let context = ParsingContext::Blockquote {
+                pending_lines: vec![content],
+            };
+            return (vec![paragraph::parse(&text)], context);
+        }
+
+        // List 시작이면 Paragraph 종료 후 List 시작
+        // CommonMark: List는 Paragraph를 인터럽트 가능 (단, 빈 아이템 제외)
+        if let Ok(ListItemStartReason::Started(start)) = list_item::try_start(line) {
+            // 빈 아이템은 Paragraph 인터럽트 불가 (CommonMark 명세)
+            if !start.content.is_empty() {
+                let text = self.pending_lines.join("\n");
+                let content_indent = start.content_indent;
+                let context = ParsingContext::List {
+                    first_item_start: start.clone(),
+                    items: Vec::new(),
+                    current_item_lines: vec![ItemLine::text(start.content)],
+                    current_content_indent: content_indent,
+                    tight: true,
+                    pending_blank_count: 0,
+                };
+                return (vec![paragraph::parse(&text)], context);
+            }
+        }
+
+        // 줄 추가
+        let mut pending_lines = self.pending_lines;
+        pending_lines.push(line.trim().to_string());
+        (vec![], ParsingContext::Paragraph(ParagraphContext::new(pending_lines)))
+    }
+}

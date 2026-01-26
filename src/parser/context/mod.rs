@@ -3,8 +3,10 @@
 //! 시작 정보(Start)와 파싱 상태(ParsingContext)를 분리하여 관리합니다.
 
 mod none_context;
+mod paragraph_context;
 
 pub use none_context::NoneContext;
+pub use paragraph_context::ParagraphContext;
 
 use crate::node::BlockNode;
 
@@ -39,7 +41,7 @@ pub enum ParsingContext {
     },
 
     /// Paragraph 파싱 중 (여러 줄이 하나의 문단)
-    Paragraph { pending_lines: Vec<String> },
+    Paragraph(ParagraphContext),
 
     /// Blockquote 파싱 중 (여러 줄 수집)
     Blockquote { pending_lines: Vec<String> },
