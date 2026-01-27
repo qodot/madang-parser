@@ -1,4 +1,4 @@
-# madang-parser 개발 지침
+# madang-compiler 개발 지침
 
 ## 작업 목적
 

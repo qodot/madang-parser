@@ -1,5 +1,5 @@
 [package]
-name = "madang-parser"
+name = "madang-compiler"
 version = "2025.1.14"
 edition = "2024"
 description = "CommonMark/GFM/OFM parser for Madang"
